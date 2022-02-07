@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-fontcolor",
+  "name": "@hi-aomao/plugin-fontcolor",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-embed",
+  "name": "@hi-aomao/plugin-embed",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

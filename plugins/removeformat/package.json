@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-removeformat",
+  "name": "@hi-aomao/plugin-removeformat",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

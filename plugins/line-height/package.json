@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-line-height",
+  "name": "@hi-aomao/plugin-line-height",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

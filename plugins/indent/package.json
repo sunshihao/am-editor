@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-indent",
+  "name": "@hi-aomao/plugin-indent",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

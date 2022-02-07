@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-bold",
+  "name": "@hi-aomao/plugin-bold",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

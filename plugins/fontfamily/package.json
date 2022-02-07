@@ -1,5 +1,5 @@
 {
-  "name": "@aomao/plugin-fontfamily",
+  "name": "@hi-aomao/plugin-fontfamily",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
