@@ -14,6 +14,9 @@
     "lib",
     "src"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "sunshihao945@outlook.com",
   "license": "MIT",
   "homepage": "https://github.com/yanmao-cc/am-editor#readme",

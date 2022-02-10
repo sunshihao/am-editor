@@ -9,6 +9,9 @@
     "lib",
     "src"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "npm_ssh",
   "license": "MIT",
   "homepage": "https://github.com/yanmao-cc/am-editor#readme",
