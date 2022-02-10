@@ -1,6 +1,6 @@
 {
-  "name": "@hi-aomao/engine",
-  "version": "2.7.27",
+  "name": "@hi-knowledge/engine",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "typings": "dist/index.d.ts",
@@ -9,7 +9,7 @@
     "lib",
     "src"
   ],
-  "author": "me@aomao.com",
+  "author": "npm_ssh",
   "license": "MIT",
   "homepage": "https://github.com/yanmao-cc/am-editor#readme",
   "repository": {

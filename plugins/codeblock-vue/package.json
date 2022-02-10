@@ -1,6 +1,6 @@
 {
-  "name": "@hi-aomao/plugin-codeblock-vue",
-  "version": "2.7.27",
+  "name": "@hi-knowledge/plugin-codeblock-vue",
+  "version": "1.0.0",
   "description": "代码块 Vue",
   "keywords": [
     "codeblock",
@@ -14,7 +14,7 @@
     "lib",
     "src"
   ],
-  "author": "me@aomao.com",
+  "author": "sunshihao945@outlook.com",
   "license": "MIT",
   "homepage": "https://github.com/yanmao-cc/am-editor#readme",
   "repository": {
@@ -28,7 +28,7 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@aomao/engine": "^2.7.27",
+    "@hi-knowledge/engine": "^1.0.0",
     "@babel/runtime": "^7.13.10",
     "ant-design-vue": "^2.2.6",
     "codemirror": "^5.60.0",
