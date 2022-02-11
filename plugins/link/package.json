@@ -1,6 +1,6 @@
 {
   "name": "@hi-knowledge/plugin-link",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "> TODO: description",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -27,8 +27,8 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@hi-knowledge/engine": "^1.0.0",
     "@babel/runtime": "^7.13.10",
+    "@hi-knowledge/engine": "^1.0.1",
     "antd": "^4.12.3",
     "classnames-es-ts": "^2.2.7",
     "react": "^17.0.1",

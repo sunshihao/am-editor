@@ -1,6 +1,6 @@
 {
   "name": "@hi-knowledge/plugin-codeblock-vue",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "代码块 Vue",
   "keywords": [
     "codeblock",
@@ -31,8 +31,8 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@hi-knowledge/engine": "^1.0.0",
     "@babel/runtime": "^7.13.10",
+    "@hi-knowledge/engine": "^1.0.1",
     "ant-design-vue": "^2.2.6",
     "codemirror": "^5.60.0",
     "lodash": "^4.17.21",

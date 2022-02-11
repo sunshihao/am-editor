@@ -1,6 +1,6 @@
 {
   "name": "@hi-knowledge/plugin-mind",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "脑图 Mind",
   "keywords": [
     "Mind",
@@ -30,7 +30,7 @@
   "dependencies": {
     "@antv/hierarchy": "^0.6.7",
     "@antv/x6": "^1.23.10",
-    "@hi-knowledge/engine": "^1.0.0",
-    "@babel/runtime": "^7.13.10"
+    "@babel/runtime": "^7.13.10",
+    "@hi-knowledge/engine": "^1.0.1"
   }
 }

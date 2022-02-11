@@ -1,6 +1,6 @@
 {
     "name": "@hi-knowledge/plugin-video",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "main": "dist/index.js",
     "module": "dist/index.esm.js",
     "typings": "dist/index.d.ts",
@@ -11,7 +11,7 @@
     ],
     "publishConfig": {
         "access": "public"
-      },
+    },
     "author": "sunshihao945@outlook.com",
     "license": "MIT",
     "homepage": "https://github.com/yanmao-cc/am-editor#readme",
@@ -23,7 +23,7 @@
         "url": "https://github.com/yanmao-cc/am-editor/issues"
     },
     "dependencies": {
-        "@hi-knowledge/engine": "^1.0.0",
-        "@babel/runtime": "^7.13.10"
+        "@babel/runtime": "^7.13.10",
+        "@hi-knowledge/engine": "^1.0.1"
     }
 }

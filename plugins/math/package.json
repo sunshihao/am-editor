@@ -1,6 +1,6 @@
 {
   "name": "@hi-knowledge/plugin-math",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Math（数学公式）",
   "keywords": [
     "Math"
@@ -27,8 +27,8 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@hi-knowledge/engine": "^1.0.0",
     "@babel/runtime": "^7.13.10",
+    "@hi-knowledge/engine": "^1.0.1",
     "lodash": "^4.17.21"
   },
   "devDependencies": {

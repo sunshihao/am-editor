@@ -1,6 +1,6 @@
 {
     "name": "@hi-knowledge/plugin-mention",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "提到 @",
     "publishConfig": {
         "access": "public"
@@ -24,8 +24,8 @@
         "url": "https://github.com/yanmao-cc/am-editor/issues"
     },
     "dependencies": {
-        "@hi-knowledge/engine": "^1.0.0",
         "@babel/runtime": "^7.13.10",
+        "@hi-knowledge/engine": "^1.0.1",
         "keymaster": "^1.6.2"
     }
 }
