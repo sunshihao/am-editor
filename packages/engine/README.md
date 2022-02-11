@@ -1,6 +1,6 @@
 # am-editor
 
-<p>这是一个am-editor的本地化工程，属于项目私用，会定时同步am-editor更新 并增加自定义功能</p>
+<p>这是一个am-editor的本地化工程，属于项目私用，会定时同步am-editor更新 并增加自定义功能,完全兼容am-editor。向am-editor作者致敬</p>
 
 <p align="center">
 	一个富文本<em>协同</em>编辑器框架，可以使用<em>React</em>和<em>Vue</em>自定义插件
