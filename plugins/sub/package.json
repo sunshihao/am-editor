@@ -1,5 +1,5 @@
 {
-  "name": "@hi-aomao/plugin-sub",
+  "name": "@aomao/plugin-sub",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

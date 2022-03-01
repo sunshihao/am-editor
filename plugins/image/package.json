@@ -1,5 +1,5 @@
 {
-    "name": "@hi-aomao/plugin-image",
+    "name": "@aomao/plugin-image",
     "version": "2.7.27",
     "description": "图片",
     "main": "dist/index.js",

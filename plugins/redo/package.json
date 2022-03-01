@@ -1,5 +1,5 @@
 {
-  "name": "@hi-aomao/plugin-redo",
+  "name": "@aomao/plugin-redo",
   "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

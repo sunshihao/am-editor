@@ -1,5 +1,5 @@
 {
-    "name": "@hi-aomao/plugin-mention",
+    "name": "@aomao/plugin-mention",
     "version": "2.7.27",
     "description": "提到 @",
     "publishConfig": {

@@ -1,5 +1,5 @@
 {
-  "name": "@hi-aomao/plugin-link-vue",
+  "name": "@aomao/plugin-link-vue",
   "version": "2.7.27",
   "description": "> TODO: description",
   "main": "dist/index.js",

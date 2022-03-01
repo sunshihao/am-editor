@@ -1,6 +1,6 @@
 {
-  "name": "@hi-aomao/plugin-alignment",
-  "version": "0.0.1",
+  "name": "@aomao/plugin-alignment",
+  "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "typings": "dist/index.d.ts",
