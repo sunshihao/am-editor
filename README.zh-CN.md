@@ -6,7 +6,7 @@
 
 2、熟悉 React 技术栈，了解渲染流程和机制。
 
-3、理解 MVC设计模式、事件驱动机制、不可变数据结构。
+3、理解 MVC 设计模式、事件驱动机制、不可变数据结构。
 
 4、有使用 Websocket、Canvas 经验。
 
@@ -58,7 +58,7 @@
 
 **`Vue2`** 案例 [https://github.com/zb201307/am-editor-vue2](https://github.com/zb201307/am-editor-vue2)
 
-**`Vue3`** 案例 [https://github.com/yanmao-cc/am-editor/tree/master/examples/vue](https://github.com/yanmao-cc/am-editor/tree/master/examples/vue)
+**`Vue3`** 案例 [https://github.com/red-axe/am-editor-vue](https://github.com/red-axe/am-editor-vue)
 
 **`React`** 案例 [https://github.com/yanmao-cc/am-editor/tree/master/examples/react](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
@@ -378,7 +378,7 @@ return (
 
 [查看 React 完整案例](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
-[查看 Vue3 完整案例](https://github.com/yanmao-cc/am-editor/tree/master/examples/vue)
+[查看 Vue3 完整案例](https://github.com/red-axe/am-editor-vue)
 
 [查看 Vue2 完整案例](https://github.com/zb201307/am-editor-vue2)
 
@@ -413,26 +413,9 @@ yarn start
 -   `api` 支持一些插件所需要的 api 访问，默认使用 https://editor.aomao.com 作为 api 服务
 -   `ot-server` 协同服务端。启动：yarn dev
 
-启动后访问 localhost:7001
-
 ### Vue
 
-只需要进入 examples/vue 目录安装依赖
-
-```base
-//依赖安装好后，在 examples/vue 目录执行以下命令
-
-yarn serve
-```
-
-在 Vue 运行环境中，默认是安装的已发布到 npm 上的代码。如果需要修改引擎或者插件的代码后立即看到效果，我们需要做以下步骤：
-
--   删除 examples/vue/node_modules/@aomao 文件夹
--   删除 examples/vue/node_modules/vue 文件夹。因为有插件依赖了 Vue，所以 Vue 的包会在项目根目录中安装。如果不删除 examples/vue 中的 Vue 包，和插件的 Vue 包不在一个环境中，就无法加载插件
--   在 am-editor 根目录下执行安装所有依赖命令，例如：`yarn`
--   最后在 examples/vue 中重新启动
-
-`Vue` 案例中没有配置任何后端 API，具体可以参考 `React` 和 `api` 设置反向代理
+[am-editor vue example](https://github.com/byoungd/am-editor-vue/blob/main/README.zh-CN.md)
 
 ## 贡献
 

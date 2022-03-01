@@ -14,12 +14,21 @@
     outline: none;
     position: relative;
     z-index: 1;
+    background: #000;
   }
   .data-video-uploading,
   .data-video-uploaded,
   .data-video-error {
     border: 1px solid #e6e6e6;
     background: #f6f6f6;
+  }
+  .data-video-content .data-video-mask {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1;
   }
   .data-video-done {
     height: auto;

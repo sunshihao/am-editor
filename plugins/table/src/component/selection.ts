@@ -563,6 +563,29 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 				event.preventDefault();
 			}
 			return;
+		} else if (target.name === 'td') {
+			const editableElement = td.find(EDITABLE_SELECTOR);
+			if (editableElement.length > 0) {
+				//获取到编辑器内最后一个子节点
+				const block = editableElement.last();
+				if (block) {
+					// 不是块级卡片不处理
+					if (!block.isBlockCard()) return;
+					//节点不可见不处理
+					if (
+						(block.get<HTMLElement>()?.offsetTop || 0) +
+							(block.get<Element>()?.clientHeight || 0) >
+						(event instanceof MouseEvent ? event : event.touches[0])
+							.clientY
+					)
+						return;
+					const node = $('<p><br /></p>');
+					editableElement.append(node);
+					const range = this.editor.change.range.get();
+					range.select(node, true).collapse(false);
+					this.editor.change.apply(range);
+				}
+			}
 		}
 		this.select({ row, col }, { row, col });
 		this.dragging = {
@@ -582,7 +605,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 
 	removeDragEvent = () => {
 		this.tableRoot?.removeClass('drag-select');
-		this.tableRoot?.removeClass('drag-selecting');
+		this.table.wrapper?.removeClass('drag-selecting');
 		this.table.wrapper
 			?.off(isMobile ? 'touchend' : 'mouseup', this.removeDragEvent)
 			.off(isMobile ? 'touchmove' : 'mousemove', this.onDragMove);
@@ -599,10 +622,10 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 			return;
 		this.prevOverTd = dragoverTd;
 		if (!this.dragging.trigger.element.equal(dragoverTd)) {
-			this.tableRoot?.addClass('drag-selecting');
+			this.table.wrapper?.addClass('drag-selecting');
 			this.selectCell(this.dragging.trigger.element, dragoverTd);
 		} else {
-			this.tableRoot?.removeClass('drag-selecting');
+			this.table.wrapper?.removeClass('drag-selecting');
 			this.clearSelect();
 		}
 	};
@@ -901,7 +924,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 
 		for (let r = begin.row; r <= end.row; r++) {
 			let tdHtml = [];
-
+			let trHeight = undefined;
 			for (let _c2 = begin.col; _c2 <= end.col; _c2++) {
 				const tdModel = tableModel.table[r][_c2];
 				let rowRemain = undefined;
@@ -910,6 +933,10 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 
 				if (!helper.isEmptyModelCol(tdModel) && tdModel.element) {
 					tdClone = tdModel.element.cloneNode(true);
+					if (tdModel.element.parentElement)
+						trHeight = $(tdModel.element.parentElement).css(
+							'height',
+						);
 				}
 
 				if (!helper.isEmptyModelCol(tdModel) && tdModel.isMulti) {
@@ -982,7 +1009,9 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 					}
 				}
 			}
-			trHtml.push('<tr>'.concat(tdHtml.join(''), '</tr>'));
+			const trElement = $(`<tr>${tdHtml.join('')}</tr>`);
+			if (trHeight) trElement.css('height', trHeight);
+			trHtml.push(trElement.get<HTMLElement>()!.outerHTML);
 		}
 
 		return `<table style="width:${tableWidth}px">${colgroup}${trHtml.join(

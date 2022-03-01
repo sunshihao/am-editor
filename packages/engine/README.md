@@ -44,7 +44,7 @@
 
 **`Vue2`** 案例 [https://github.com/zb201307/am-editor-vue2](https://github.com/zb201307/am-editor-vue2)
 
-**`Vue3`** 案例 [https://github.com/yanmao-cc/am-editor/tree/master/examples/vue](https://github.com/yanmao-cc/am-editor/tree/master/examples/vue)
+**`Vue3`** 案例 [https://github.com/red-axe/am-editor-vue](https://github.com/red-axe/am-editor-vue)
 
 **`React`** 案例 [https://github.com/yanmao-cc/am-editor/tree/master/examples/react](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
@@ -258,7 +258,7 @@ return (
 
 [查看 React 完整案例](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
-[查看 Vue3 完整案例](https://github.com/yanmao-cc/am-editor/tree/master/examples/vue)
+[查看 Vue3 完整案例](https://github.com/red-axe/am-editor-vue)
 
 [查看 Vue2 完整案例](https://github.com/zb201307/am-editor-vue2)
 
@@ -292,8 +292,6 @@ yarn ssr
 -   `plugins` 所有的插件
 -   `site-ssr` 所有的后端 API 和 SSR 配置。使用的 egg 。在 am-editor 根目录下使用 yarn ssr 自动启动 `site-ssr`
 -   `ot-server` 协同服务端。启动：yarn start
-
-启动后访问 localhost:7001
 
 ### Vue3
 

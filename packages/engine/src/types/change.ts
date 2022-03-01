@@ -240,6 +240,12 @@ export interface ChangeInterface {
 	 */
 	setHtml(html: string, callback?: (count: number) => void): void;
 	/**
+	 * 设置markdown，会格式化为合法的编辑器值
+	 * @param text markdown文本
+	 * @param callback 异步渲染卡片后回调
+	 */
+	setMarkdown(text: string, callback?: (count: number) => void): void;
+	/**
 	 * 获取编辑器值
 	 */
 	getOriginValue(container?: NodeInterface): string;
@@ -273,6 +279,17 @@ export interface ChangeInterface {
 		range?: RangeInterface,
 		callback?: (range: RangeInterface) => void,
 		followActiveMark?: boolean,
+	): void;
+	/**
+	 * 在当前光标位置粘贴一段html
+	 * @param html html
+	 * @param range 光标位置
+	 * @param callback 卡片渲染回调
+	 */
+	paste(
+		html: string,
+		range?: RangeInterface,
+		callback?: (count: number) => void,
 	): void;
 	/**
 	 * 删除内容

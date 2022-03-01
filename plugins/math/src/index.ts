@@ -50,8 +50,10 @@ export default class Math<
 	static get pluginName() {
 		return 'math';
 	}
-
-	#request?: AjaxInterface;
+	/**
+	 * 不同卡片的当前请求
+	 */
+	#request: Record<string, AjaxInterface> = {};
 
 	init() {
 		this.editor.language.add(locales);
@@ -80,20 +82,21 @@ export default class Math<
 	action(action: string, ...args: any) {
 		switch (action) {
 			case 'query':
-				const [code, success, failed] = args;
-				return this.query(code, success, failed);
+				const [key, code, success, failed] = args;
+				return this.query(key, code, success, failed);
 		}
 	}
 
 	query(
+		key: string,
 		code: string,
 		success: (url: string) => void,
 		failed: (message: string) => void,
 	) {
 		const { request } = this.editor;
 		const { action, type, contentType, data, parse } = this.options;
-		this.#request?.abort();
-		this.#request = request.ajax({
+		this.#request[key]?.abort();
+		this.#request[key] = request.ajax({
 			url: action,
 			method: 'POST',
 			contentType: contentType || 'application/json',
@@ -264,7 +267,10 @@ export default class Math<
 		return true;
 	}
 
-	parseHtml(root: NodeInterface) {
+	parseHtml(
+		root: NodeInterface,
+		callback?: (node: NodeInterface, value: MathValue) => NodeInterface,
+	) {
 		root.find(
 			`[${CARD_KEY}="${MathComponent.cardName}"],[${READY_CARD_KEY}="${MathComponent.cardName}"]`,
 		).each((cardNode) => {
@@ -277,7 +283,7 @@ export default class Math<
 				card?.getValue() ||
 				decodeCardValue(node.attributes(CARD_VALUE_KEY));
 			if (value) {
-				const img = $('<img />');
+				let img = $('<img />');
 				node.empty();
 				img.attributes('src', value.url);
 				img.css('visibility', 'visible');
@@ -287,6 +293,9 @@ export default class Math<
 						MathComponent.cardName
 					}" data-value="${encodeCardValue(value)}"></span>`,
 				);
+				if (callback) {
+					img = callback(img, value);
+				}
 				span.append(img);
 				node.replaceWith(span);
 			} else node.remove();

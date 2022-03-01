@@ -110,7 +110,10 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 		});
 	}
 
-	parseHtml(root: NodeInterface) {
+	parseHtml(
+		root: NodeInterface,
+		callback?: (node: NodeInterface, value: ImageValue) => NodeInterface,
+	) {
 		root.find(
 			`[${CARD_KEY}="${ImageComponent.cardName}"],[${READY_CARD_KEY}="${ImageComponent.cardName}"]`,
 		).each((cardNode) => {
@@ -122,7 +125,11 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 				card?.getValue() ||
 				decodeCardValue(node.attributes(CARD_VALUE_KEY));
 			if (value?.src && value.status === 'done') {
-				let img = $('<img />');
+				const currentImg = node.find('.data-image-meta img');
+				let img =
+					currentImg.length > 0
+						? currentImg.clone(true)
+						: $('<img />');
 				node.empty();
 				let src = value.src;
 				const { onBeforeRender } = this.options;
@@ -137,15 +144,16 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 				if (size?.height) img.css('height', `${size.height}px`);
 				img.removeAttributes('class');
 				img.attributes('data-type', type);
-				if (img.length > 0) {
-					if (type === CardType.BLOCK) {
-						img = this.editor.node.wrap(
-							img,
-							$(`<p style="text-align:center;"></p>`),
-						);
-					}
-					node.replaceWith(img);
+				if (callback) {
+					img = callback(img, value);
 				}
+				if (type === CardType.BLOCK) {
+					img = this.editor.node.wrap(
+						img,
+						$(`<p style="text-align:center;"></p>`),
+					);
+				}
+				node.replaceWith(img);
 			} else node.remove();
 		});
 	}

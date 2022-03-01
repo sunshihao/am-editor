@@ -75,7 +75,15 @@ export default class MathCard<T extends MathValue = MathValue> extends Card<T> {
 		failed?: (message: string) => void,
 	) {
 		const { command } = this.editor;
-		command.executeMethod('math', 'action', 'query', code, success, failed);
+		command.executeMethod(
+			'math',
+			'action',
+			'query',
+			this.id,
+			code,
+			success,
+			failed,
+		);
 	}
 
 	getMaxWidth(node: NodeInterface = this.root) {
@@ -150,6 +158,17 @@ export default class MathCard<T extends MathValue = MathValue> extends Card<T> {
 		this.#position?.update();
 	}
 
+	onWindowResize = () => {
+		this.updateMaxWidth();
+	};
+
+	updateMaxWidth = () => {
+		const maxWidth = this.getMaxWidth();
+		this.container
+			?.find('img')
+			?.css('max-width', Math.max(maxWidth, 0) + 'px');
+	};
+
 	renderView() {
 		const value = this.getValue();
 		const locales = getLocales(this.editor);
@@ -203,8 +222,16 @@ export default class MathCard<T extends MathValue = MathValue> extends Card<T> {
 		this.renderView();
 	}
 
+	didRender(): void {
+		super.didRender();
+		window.addEventListener('resize', this.onWindowResize);
+		this.editor.on('editor:resize', this.onWindowResize);
+	}
+
 	destroy() {
 		super.destroy();
 		this.mathEditor?.destroy();
+		window.removeEventListener('resize', this.onWindowResize);
+		this.editor.off('editor:resize', this.onWindowResize);
 	}
 }

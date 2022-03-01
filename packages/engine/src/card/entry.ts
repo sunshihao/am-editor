@@ -347,14 +347,35 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		return this.onSelectByOther(activated, value);
 	}
 	onChange?(trigger: 'remote' | 'local', node: NodeInterface): void;
-	destroy() {
-		this.toolbarModel?.hide();
-		this.toolbarModel?.destroy();
-		this.resizeModel?.hide();
-		this.resizeModel?.destroy();
+	private initToolbar() {
+		if (this.toolbar) {
+			if (!this.toolbarModel)
+				this.toolbarModel = new Toolbar(this.editor, this);
+			if (this.activated) {
+				this.toolbarModel.show();
+			}
+		} else {
+			this.toolbarModel?.hide();
+			this.toolbarModel?.destroy();
+			this.toolbarModel = undefined;
+		}
+	}
+	private initResize() {
+		if (this.resize) {
+			const container =
+				typeof this.resize === 'function'
+					? this.resize()
+					: this.findByKey('body');
+			if (container && container.length > 0) {
+				this.resizeModel?.render(container);
+			}
+		}
 	}
 	didInsert?(): void;
-	didUpdate?(): void;
+	didUpdate() {
+		this.initResize();
+		this.initToolbar();
+	}
 	beforeRender() {
 		const center = this.getCenter();
 		const loadingElement = $(
@@ -368,26 +389,13 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		center.empty().append(loadingElement);
 	}
 	didRender() {
-		if (this.loading) this.find(`.${CARD_LOADING_KEY}`).remove();
-		if (this.resize) {
-			const container =
-				typeof this.resize === 'function'
-					? this.resize()
-					: this.findByKey('body');
-			if (container && container.length > 0) {
-				this.resizeModel?.render(container);
-			}
+		if (this.loading) {
+			this.find(`.${CARD_LOADING_KEY}`).remove();
+			if (!isEngine(this.editor))
+				this.root.removeAttributes(CARD_LOADING_KEY);
 		}
-		if (this.toolbar) {
-			if (!this.toolbarModel)
-				this.toolbarModel = new Toolbar(this.editor, this);
-			if (this.activated) {
-				this.toolbarModel.show();
-			}
-		} else {
-			this.toolbarModel?.hide();
-			this.toolbarModel?.destroy();
-		}
+		this.initResize();
+		this.initToolbar();
 		if (this.isEditable) {
 			this.editor.nodeId.generateAll(this.getCenter().get<Element>()!);
 		}
@@ -410,6 +418,15 @@ abstract class CardEntry<T extends CardValue = CardValue>
 	executeMark?(mark: NodeInterface): void;
 
 	queryMarks?(): NodeInterface[];
+
+	destroy() {
+		this.toolbarModel?.hide();
+		this.toolbarModel?.destroy();
+		this.toolbarModel = undefined;
+		this.resizeModel?.hide();
+		this.resizeModel?.destroy();
+		this.resizeModel = undefined;
+	}
 }
 
 export default CardEntry;
