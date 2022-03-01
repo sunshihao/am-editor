@@ -1,6 +1,6 @@
 {
-  "name": "@hi-knowledge/plugin-removeformat",
-  "version": "1.0.0",
+  "name": "@hi-aomao/plugin-removeformat",
+  "version": "2.7.27",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "typings": "dist/index.d.ts",
@@ -9,7 +9,7 @@
     "lib",
     "src"
   ],
-  "author": "sunshihao945@outlook.com",
+  "author": "me@aomao.com",
   "license": "MIT",
   "homepage": "https://github.com/yanmao-cc/am-editor#readme",
   "repository": {
@@ -20,7 +20,7 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@hi-knowledge/engine": "^1.0.0",
+    "@aomao/engine": "^2.7.27",
     "@babel/runtime": "^7.13.10"
   }
 }
