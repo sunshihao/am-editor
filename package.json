@@ -2,9 +2,6 @@
     "name": "hi-editor",
     "private": true,
     "license": "MIT",
-    "publishConfig": {
-        "access": "public"
-    },
     "workspaces": [
         "packages/*",
         "plugins/*"
