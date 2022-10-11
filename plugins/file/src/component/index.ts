@@ -1,4 +1,4 @@
-import type { FileOptions } from '../types';
+import type { FileOptions, FileValue } from '../types';
 import {
 	$,
 	Card,
@@ -12,46 +12,8 @@ import {
 	isEngine,
 	Tooltip,
 	SelectStyleType,
-	CardValue,
 } from '@aomao/engine';
 import './index.css';
-
-export interface FileValue extends CardValue {
-	/**
-	 *  文件名称
-	 */
-	name: string;
-	/**
-	 * 文件大小
-	 */
-	size?: number;
-	/**
-	 * 状态
-	 * uploading 上传中
-	 * done 上传成功
-	 */
-	status?: 'uploading' | 'done' | 'error';
-	/**
-	 * 文件地址
-	 */
-	url?: string;
-	/**
-	 * 预览地址
-	 */
-	preview?: string;
-	/**
-	 * 下载地址
-	 */
-	download?: string;
-	/**
-	 * 上传进度
-	 */
-	percent?: number;
-	/**
-	 * 错误状态下的错误信息
-	 */
-	message?: string;
-}
 
 export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 	static get cardName() {
@@ -67,6 +29,10 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 	}
 
 	static get autoSelected() {
+		return false;
+	}
+
+	static get collab() {
 		return false;
 	}
 
@@ -101,66 +67,85 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 		const filePlugin = this.editor.plugin.findPlugin<FileOptions>('file');
 		if (filePlugin) {
 			const { onBeforeRender } = filePlugin.options || {};
-			if (onBeforeRender) return onBeforeRender(action, url);
+			if (onBeforeRender) return onBeforeRender(action, url, this.editor);
 		}
 		return url;
 	};
 
-	previewFile = () => {
-		const value = this.getValue();
-		if (!value?.preview) return;
-		const { preview } = value;
-		window.open(sanitizeUrl(this.onBeforeRender('preview', preview)));
-	};
-
-	downloadFile = () => {
-		const value = this.getValue();
-		if (!value?.download) return;
-		const { download } = value;
-		window.open(sanitizeUrl(this.onBeforeRender('download', download)));
-	};
-
 	toolbar() {
-		const items: Array<CardToolbarItemOptions | ToolbarItemOptions> = [];
-		const value = this.getValue();
-		if (!value) return items;
-		const { status, preview, download } = value;
-		const locale = this.getLocales();
-		if (status === 'done') {
-			if (!!preview) {
-				items.push({
-					type: 'button',
-					content: '<span class="data-icon data-icon-preview" />',
-					title: locale.preview,
-					onClick: this.previewFile,
-				});
+		const editor = this.editor;
+		const options =
+			editor.plugin.findPlugin<FileOptions>('file')?.options ?? {};
+		const getItems = () => {
+			const items: Array<CardToolbarItemOptions | ToolbarItemOptions> =
+				[];
+			const value = this.getValue();
+			if (!value) return items;
+			const { status, preview, download } = value;
+			const locale = this.getLocales();
+			if (status === 'done') {
+				if (!!preview) {
+					const onPreview = () => {
+						if (options.onPreview)
+							options.onPreview(preview, value);
+					};
+					items.push({
+						key: 'preview',
+						type: 'button',
+						content: '<span class="data-icon data-icon-preview" />',
+						title: locale.preview,
+						link: !options.onPreview
+							? sanitizeUrl(
+									this.onBeforeRender('preview', preview),
+							  )
+							: undefined,
+						onClick: options.onPreview ? onPreview : undefined,
+					});
+				}
+
+				if (!!download) {
+					const onDownload = () => {
+						if (options.onDownload)
+							options.onDownload(download, value);
+					};
+					items.push({
+						key: 'download',
+						type: 'button',
+						content:
+							'<span class="data-icon data-icon-download" />',
+						title: locale.download,
+						link: !options.onDownload
+							? sanitizeUrl(
+									this.onBeforeRender('download', download),
+							  )
+							: undefined,
+						onClick: options.onDownload ? onDownload : undefined,
+					});
+				}
+
+				if (
+					!(!isEngine(editor) || editor.readonly) &&
+					items.length > 0
+				) {
+					items.push({
+						key: 'separator',
+						type: 'separator',
+					});
+				}
 			}
 
-			if (!!download) {
+			if (!(!isEngine(editor) || editor.readonly)) {
 				items.push({
-					type: 'button',
-					content: '<span class="data-icon data-icon-download" />',
-					title: locale.download,
-					onClick: this.downloadFile,
+					key: 'delete',
+					type: 'delete',
 				});
 			}
-
-			if (
-				!(!isEngine(this.editor) || this.editor.readonly) &&
-				items.length > 0
-			) {
-				items.push({
-					type: 'separator',
-				});
-			}
+			return items;
+		};
+		if (options?.cardToolbars) {
+			return options.cardToolbars(getItems(), this.editor);
 		}
-
-		if (!(!isEngine(this.editor) || this.editor.readonly)) {
-			items.push({
-				type: 'delete',
-			});
-		}
-		return items;
+		return getItems();
 	}
 
 	renderTemplate(value: FileValue) {
@@ -197,23 +182,22 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 			percentHtml = `<span class="percent">${percent || 0}%</span>`;
 
 		return `
-        <span class="data-file data-file-${status}">
+        <a class="data-file data-file-${status}">
             <span class="data-file-icon">${icon}</span>
             ${percentHtml}
             <span class="data-file-title">${escape(name)}</span>
             ${fileSizeHtml}
-        </span>
+        </a>
         `;
 	}
 
 	bindErrorEvent(node: NodeInterface) {
+		const editor = this.editor;
 		const copyNode = node.find('.data-icon-copy');
 		copyNode.on('mouseenter', () => {
 			Tooltip.show(
 				copyNode,
-				this.editor.language
-					.get('image', 'errorMessageCopy')
-					.toString(),
+				editor.language.get('image', 'errorMessageCopy').toString(),
 			);
 		});
 		copyNode.on('mouseleave', () => {
@@ -223,11 +207,10 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 			event.stopPropagation();
 			event.preventDefault();
 			Tooltip.hide();
-			this.editor.clipboard.copy(
-				this.getValue()?.message || 'Error message',
-			);
-			this.editor.messageSuccess(
-				this.editor.language.get('copy', 'success').toString(),
+			editor.clipboard.copy(this.getValue()?.message || 'Error message');
+			editor.messageSuccess(
+				'copy',
+				editor.language.get('copy', 'success').toString(),
 			);
 		});
 	}
@@ -244,6 +227,11 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 		else this.container?.removeClass('data-file-active');
 	}
 
+	writeHistoryOnValueChange() {
+		if (this.loading) return false;
+		return;
+	}
+
 	render(): string | void | NodeInterface {
 		const value = this.getValue();
 		if (!value) return;
@@ -253,8 +241,8 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 		} else {
 			this.container = this.getCenter().first()!;
 		}
-
-		if (isEngine(this.editor)) {
+		const editor = this.editor;
+		if (isEngine(editor)) {
 			this.container.attributes('draggable', 'true');
 		} else {
 			this.renderView();
@@ -265,16 +253,30 @@ export default class FileCard<V extends FileValue = FileValue> extends Card<V> {
 		this.container?.find('.percent').html(`${value.percent}%`);
 		this.updateMaxWidth();
 		window.addEventListener('resize', this.onWindowResize);
-		this.editor.on('editor:resize', this.onWindowResize);
+		editor.on('editor:resize', this.onWindowResize);
 	}
 
 	renderView() {
 		// 默认点击都是下载
-		this.container?.on('click', this.downloadFile);
+		const value = this.getValue();
+		const options =
+			this.editor.plugin.findPlugin<FileOptions>('file')?.options ?? {};
+		const downloadUrl = sanitizeUrl(
+			this.onBeforeRender('download', value.download || ''),
+		);
+		if (options.onDownload) {
+			this.container?.on('click', () => {
+				options.onDownload!(downloadUrl, value);
+			});
+		} else {
+			this.container?.attributes('target', '_blank');
+			this.container?.attributes('href', downloadUrl);
+		}
 	}
 
 	didUpdate() {
-		super.didUpdate();
+		const value = this.getValue();
+		if (value.status === 'done') super.didUpdate();
 		this.toolbarModel?.getContainer()?.remove();
 		this.toolbarModel?.create();
 	}

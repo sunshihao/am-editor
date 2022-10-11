@@ -25,6 +25,7 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 	private table: TableInterface;
 	private readonly COL_MIN_WIDTH: number;
 	private readonly ROW_MIN_HEIGHT: number;
+	private readonly MAX_INSERT_NUM: number;
 	tableRoot?: NodeInterface;
 	colsHeader?: NodeInterface;
 	rowsHeader?: NodeInterface;
@@ -65,6 +66,7 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		this.editor = editor;
 		this.COL_MIN_WIDTH = options.col_min_width;
 		this.ROW_MIN_HEIGHT = options.row_min_height;
+		this.MAX_INSERT_NUM = options.max_insert_num;
 	}
 
 	init() {
@@ -82,7 +84,7 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		this.bindEvents();
 	}
 
-	renderRowBars(start: number = 0, end?: number) {
+	renderRowBars(refershSize: boolean = true) {
 		const table = this.tableRoot?.get<HTMLTableElement>();
 		if (!table) return;
 		//行删除按钮
@@ -126,25 +128,38 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 					this.rowAddAlign === 'down' ? false : true,
 				);
 			});
-		const trs = table.rows;
-		end = end || trs?.length || 0;
-		const rowBars = this.rowsHeader?.find(Template.ROWS_HEADER_ITEM_CLASS);
-		for (let i = start; i < end; i++) {
-			rowBars?.eq(i)?.css('height', getComputedStyle(trs[i], 'height'));
+		if (refershSize) {
+			const trs = table.rows;
+			const end = trs?.length || 0;
+			const rowBars = this.rowsHeader?.find(
+				Template.ROWS_HEADER_ITEM_CLASS,
+			);
+			if (rowBars) {
+				for (let i = 0; i < end; i++) {
+					const newHeight = getComputedStyle(trs[i], 'height');
+					const bar = rowBars[i] as HTMLElement | undefined;
+					const oldHeight = bar?.style.height;
+					if (bar && newHeight !== oldHeight)
+						bar.style.height = newHeight;
+				}
+			}
+			const rowTrigger = this.rowsHeader?.find(
+				Template.ROWS_HEADER_TRIGGER_CLASS,
+			);
+			const tableWidth = this.tableRoot!.width();
+			const wrapperWidth = this.table.wrapper?.width() || 0;
+			const width = tableWidth < wrapperWidth ? tableWidth : wrapperWidth;
+			const newWidth = width + (this.rowsHeader?.width() || 0) - 1;
+			rowTrigger?.each((row) => {
+				const oldWidth = (row as HTMLElement).style.width;
+				if (oldWidth !== newWidth + 'px') {
+					(row as HTMLElement).style.width = newWidth + 'px';
+				}
+			});
 		}
-		const rowTrigger = this.rowsHeader?.find(
-			Template.ROWS_HEADER_TRIGGER_CLASS,
-		);
-		const tableWidth = this.tableRoot!.width();
-		const wrapperWidth = this.table.wrapper?.width() || 0;
-		const width = tableWidth < wrapperWidth ? tableWidth : wrapperWidth;
-		rowTrigger?.css(
-			'width',
-			`${width + (this.rowsHeader?.width() || 0) - 1}px`,
-		);
 	}
 
-	renderColBars() {
+	renderColBars(refershSize: boolean = true) {
 		const table = this.tableRoot?.get<HTMLTableElement>();
 		if (!table) return;
 		const tableWidth = removeUnit(getComputedStyle(table, 'width'));
@@ -193,6 +208,13 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		this.tableRoot?.css('width', `${tableWidth}px`);
 		this.colsHeader?.css('width', `${tableWidth}px`);
 
+		if (refershSize) this.renderColSize();
+	}
+
+	renderColSize() {
+		const table = this.tableRoot?.get<HTMLTableElement>();
+		if (!table) return;
+		const tableWidth = removeUnit(getComputedStyle(table, 'width'));
 		const cols = this.tableRoot?.find('col');
 		if (!cols) return;
 
@@ -201,7 +223,8 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		const colWidthArray = {};
 		let allColWidth = 0;
 		let colIndex = 0;
-		cols.each((col, i) => {
+		cols.each((_, i) => {
+			const col = cols[i];
 			const colWidth = removeUnit($(col).attributes('width'));
 			if (colWidth) {
 				colWidthArray[i] = colWidth;
@@ -268,22 +291,28 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 			});
 		} else {
 			cols.each((_, index) => {
-				const width =
+				const newWidth =
 					Math.round(
 						((tableWidth * colWidthArray[index]) / allColWidth) *
 							10000,
 					) / 10000;
-				colBars.eq(index)?.css('width', width + 'px');
-				cols.eq(index)?.attributes('width', width);
+				const bar = colBars[index] as HTMLElement | undefined;
+				const oldWidth = bar?.style.width;
+				if (bar && oldWidth !== newWidth + 'px')
+					bar.style.width = newWidth + 'px';
 			});
 		}
 		const colTrigger = this.colsHeader?.find(
 			Template.COLS_HEADER_TRIGGER_CLASS,
 		);
-		colTrigger?.css(
-			'height',
-			`${(tableModel?.height || 0) + (this.colsHeader?.height() || 0)}px`,
-		);
+		const newHeight =
+			(tableModel?.height || 0) + (this.colsHeader?.height() || 0);
+		colTrigger?.each((col) => {
+			const oldHeight = (col as HTMLElement).style.height;
+			if (oldHeight !== newHeight + 'px') {
+				(col as HTMLElement).style.height = newHeight + 'px';
+			}
+		});
 	}
 	/**
 	 * 绑定事件
@@ -294,14 +323,14 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 				isMobile ? 'touchstart' : 'mousedown',
 				this.onMouseDownColsHeader,
 			)
-			.on('click', this.onClickColsHeader)
+			.on('mouseup', this.onClickColsHeader)
 			.on('dragstart', this.onDragStartColsHeader);
 		this.rowsHeader
 			?.on(
 				isMobile ? 'touchstart' : 'mousedown',
 				this.onMouseDownRowsHeader,
 			)
-			.on('click', this.onClickRowsHeader)
+			.on('mouseup', this.onClickRowsHeader)
 			.on('dragstart', this.onDragStartRowsHeader);
 		this.tableHeader?.on('mousedown', this.onClickTableHeader);
 		this.table.wrapper?.on('contextmenu', (event) =>
@@ -317,58 +346,141 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		this.menuBar?.on('mouseover', (event) => this.handleHoverMenu(event));
 		this.menuBar?.on('mouseleave', (event) => this.hideHighlight(event));
 		//列头部 padding 区域单击让其选中表格卡片上方的blcok
+		const editor = this.editor;
 		this.viewport?.on(
 			isMobile ? 'touchstart' : 'mousedown',
 			(event: MouseEvent) => {
 				if (!event.target) return;
 				const targetNode = $(event.target);
 				if (
-					!isEngine(this.editor) ||
+					!isEngine(editor) ||
 					!event.target ||
 					!this.viewport?.equal(targetNode)
 				)
 					return;
 				event.preventDefault();
 				event.stopPropagation();
-				const { change } = this.editor;
+				const { change } = editor;
 				const range = change.range.get();
-				this.editor.card.focusPrevBlock(this.table, range, true);
-				this.editor.card.activate(
+				editor.card.focusPrevBlock(this.table, range, true);
+				editor.card.activate(
 					range.startNode,
 					CardActiveTrigger.MOUSE_DOWN,
 				);
 				change.range.select(range);
 			},
 		);
-
+		let colMoveTimeout: NodeJS.Timeout | null = null;
 		this.colsHeader
 			?.on('mouseenter', () => {
 				if (this.hideColAddButtonTimeount)
 					clearTimeout(this.hideColAddButtonTimeount);
 			})
-			.on('mousemove', (event: MouseEvent) =>
-				this.onMouseMoveColsHeader(event),
-			)
-			.on('mouseleave', () => {
+			.on('mousemove', (event: MouseEvent) => {
+				if (colMoveTimeout) clearTimeout(colMoveTimeout);
+				colMoveTimeout = setTimeout(() => {
+					this.onMouseMoveColsHeader(event);
+				}, 200);
+			})
+			.on('mouseleave', (e: MouseEvent) => {
+				if (colMoveTimeout) clearTimeout(colMoveTimeout);
 				this.hideColAddButtonTimeount = setTimeout(() => {
 					this.colAddButton?.hide();
 				}, 200);
 			});
-
+		let colItemTimeout: NodeJS.Timeout | null = null;
+		this.colsHeader
+			?.find(Template.COLS_HEADER_ITEM_CLASS)
+			.on('mouseenter', (e: MouseEvent) => {
+				if (colItemTimeout) clearTimeout(colItemTimeout);
+				colItemTimeout = setTimeout(() => {
+					if (e.target) {
+						$(e.target)
+							.closest(Template.COLS_HEADER_ITEM_CLASS)
+							.addClass('active');
+					}
+				}, 200);
+			})
+			.on('mouseleave', (e: MouseEvent) => {
+				if (colItemTimeout) clearTimeout(colItemTimeout);
+				if (e.target) {
+					$(e.target)
+						.closest(Template.COLS_HEADER_ITEM_CLASS)
+						.removeClass('active');
+				}
+			});
+		let colTriggerTimeout: NodeJS.Timeout | null = null;
+		this.colsHeader
+			?.find(Template.COLS_HEADER_TRIGGER_CLASS)
+			.on('mouseenter', (e: MouseEvent) => {
+				if (colTriggerTimeout) clearTimeout(colTriggerTimeout);
+				const target = $(e.target || []);
+				colTriggerTimeout = setTimeout(() => {
+					target.addClass('active');
+				}, 200);
+			})
+			.on('mouseleave', (e: MouseEvent) => {
+				if (colTriggerTimeout) clearTimeout(colTriggerTimeout);
+				if (e.target) {
+					$(e.target).removeClass('active');
+				}
+			});
+		let rowMoveTimeout: NodeJS.Timeout | null = null;
 		this.rowsHeader
 			?.on('mouseenter', () => {
 				if (this.hideRowAddButtonTimeount)
 					clearTimeout(this.hideRowAddButtonTimeount);
 			})
 			.on('mousemove', (event: MouseEvent) => {
-				this.onMouseMoveRowsHeader(event);
-				this.rowsHeader?.css('z-index', 128);
+				if (rowMoveTimeout) clearTimeout(rowMoveTimeout);
+				rowMoveTimeout = setTimeout(() => {
+					this.onMouseMoveRowsHeader(event);
+					this.rowsHeader?.css('z-index', 128);
+				}, 200);
 			})
 			.on('mouseleave', () => {
+				if (rowMoveTimeout) clearTimeout(rowMoveTimeout);
 				this.hideRowAddButtonTimeount = setTimeout(() => {
 					this.rowsHeader?.css('z-index', '');
 					this.rowAddButton?.hide();
 				}, 200);
+			});
+		let rowItemTimeout: NodeJS.Timeout | null = null;
+		this.rowsHeader
+			?.find(Template.ROWS_HEADER_ITEM_CLASS)
+			.on('mouseenter', (e: MouseEvent) => {
+				if (rowItemTimeout) clearTimeout(rowItemTimeout);
+				rowItemTimeout = setTimeout(() => {
+					if (e.target) {
+						$(e.target)
+							.closest(Template.ROWS_HEADER_ITEM_CLASS)
+							.addClass('active');
+					}
+				}, 200);
+			})
+			.on('mouseleave', (e: MouseEvent) => {
+				if (rowItemTimeout) clearTimeout(rowItemTimeout);
+				if (e.target) {
+					$(e.target)
+						.closest(Template.ROWS_HEADER_ITEM_CLASS)
+						.removeClass('active');
+				}
+			});
+		let rowTriggerTimeout: NodeJS.Timeout | null = null;
+		this.rowsHeader
+			?.find(Template.ROWS_HEADER_TRIGGER_CLASS)
+			.on('mouseenter', (e: MouseEvent) => {
+				if (rowTriggerTimeout) clearTimeout(rowTriggerTimeout);
+				const target = $(e.target || []);
+				rowTriggerTimeout = setTimeout(() => {
+					target.addClass('active');
+				}, 200);
+			})
+			.on('mouseleave', (e: MouseEvent) => {
+				if (rowTriggerTimeout) clearTimeout(rowTriggerTimeout);
+				if (e.target) {
+					$(e.target).removeClass('active');
+				}
 			});
 	}
 	/**
@@ -450,11 +562,14 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		this.rowAddButton.show('flex');
 		this.rowAddButton.css('top', `${top}px`);
 		this.rowAddAlign = isEnd ? 'down' : 'up';
+
+		const viewportElement = this.viewport?.get<HTMLElement>()!;
 		const splitWidth =
 			(this.table.selection.tableModel?.width || 0) +
 			itemNode.width() +
 			4;
-		this.rowAddButtonSplit.css('width', `${splitWidth}px`);
+		let width = Math.min(viewportElement.offsetWidth + 4, splitWidth);
+		this.rowAddButtonSplit.css('width', `${width}px`);
 	}
 
 	/**
@@ -567,23 +682,40 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		const colBars = this.colsHeader?.find(Template.COLS_HEADER_ITEM_CLASS);
 		const rowBars = this.rowsHeader?.find(Template.ROWS_HEADER_ITEM_CLASS);
 		const { begin, end, allCol, allRow } = selectArea;
-		for (let r = begin.row; r <= end.row; r++) {
-			if (allCol) {
-				rowBars?.eq(r)?.addClass('selected');
-				if (allRow) rowBars?.eq(r)?.addClass('no-dragger');
+		if (rowBars) {
+			for (let r = begin.row; r <= end.row; r++) {
+				if (allCol) {
+					const bar = rowBars[r] as HTMLElement | undefined;
+					if (!bar?.classList.contains('selected')) {
+						bar?.classList.add('selected');
+					}
+					if (allRow && !bar?.classList.contains('no-dragger'))
+						bar?.classList.add('no-dragger');
+				}
 			}
 		}
 
-		for (let c = begin.col; c <= end.col; c++) {
-			if (allRow) {
-				colBars?.eq(c)?.addClass('selected');
-				if (allCol) colBars?.eq(c)?.addClass('no-dragger');
+		if (colBars) {
+			for (let c = begin.col; c <= end.col; c++) {
+				if (allRow) {
+					const bar = colBars[c] as HTMLElement | undefined;
+					if (!bar?.classList.contains('selected')) {
+						bar?.classList.add('selected');
+					}
+					if (allCol && !bar?.classList.contains('no-dragger'))
+						bar?.classList.add('no-dragger');
+				}
 			}
 		}
+		const tableHeaderElement = this.tableHeader?.get<HTMLElement>();
 		if (allCol && allRow) {
-			this.tableHeader?.addClass('selected');
+			if (!tableHeaderElement?.classList.contains('selected')) {
+				tableHeaderElement?.classList.add('selected');
+			}
 		} else {
-			this.tableHeader?.removeClass('selected');
+			if (tableHeaderElement?.classList.contains('selected')) {
+				tableHeaderElement?.classList.remove('selected');
+			}
 		}
 		//行删除按钮
 		if (allCol && !allRow) {
@@ -621,18 +753,30 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 	clearActiveStatus() {
 		const colBars = this.colsHeader?.find(Template.COLS_HEADER_ITEM_CLASS);
 		const rowBars = this.rowsHeader?.find(Template.ROWS_HEADER_ITEM_CLASS);
-		colBars?.removeClass('selected');
-		colBars?.removeClass('no-dragger');
-		rowBars?.removeClass('selected');
-		rowBars?.removeClass('no-dragger');
-		this.tableHeader?.removeClass('selected');
+		colBars?.each((bar) => {
+			const barElement = bar as HTMLElement;
+			if (barElement.classList.contains('selected'))
+				barElement.classList.remove('selected');
+			if (barElement.classList.contains('no-dragger'))
+				barElement.classList.remove('no-dragger');
+		});
+		rowBars?.each((bar) => {
+			const barElement = bar as HTMLElement;
+			if (barElement.classList.contains('selected'))
+				barElement.classList.remove('selected');
+			if (barElement.classList.contains('no-dragger'))
+				barElement.classList.remove('no-dragger');
+		});
+		const tableHeader = this.tableHeader?.get<HTMLElement>();
+		if (tableHeader?.classList.contains('selected'))
+			tableHeader.classList.remove('selected');
 	}
 	/**
 	 * 刷新控制UI
 	 */
-	refresh() {
-		this.renderColBars();
-		this.renderRowBars();
+	refresh(refershSize: boolean = true) {
+		this.renderColBars(refershSize);
+		this.renderRowBars(refershSize);
 		this.activeHeader();
 	}
 	/**
@@ -864,7 +1008,13 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 	renderRowSplitBars(row: NodeInterface, trigger: NodeInterface) {
 		const viewportElement = this.viewport?.get<HTMLElement>()!;
 		const tableWidth = this.table.selection.tableModel?.width || 0;
-		const width = Math.min(viewportElement.offsetWidth, tableWidth);
+
+		//获取table-viewport 宽度 去除 操作栏宽度
+		const width = Math.min(
+			viewportElement.offsetWidth - row.width(),
+			tableWidth,
+		);
+
 		trigger.addClass('dragging').css('width', `${width + row.width()}px`);
 	}
 
@@ -1161,38 +1311,17 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		}
 		command.mockCopy();
 		if (selectArea.begin.col > index) {
-			command.insertColAt(
-				isNext ? index - 1 : index,
-				count,
-				isNext,
-				widths,
-				true,
-			);
-			selection.selectCol(index, index + count - 1);
+			const targetIndex = isNext ? index - 1 : index;
+			command.removeCol();
+			command.insertColAt(targetIndex, count, isNext, widths, true);
+			selection.selectCol(targetIndex, targetIndex + count - 1);
 			command.mockPaste(true);
-			setTimeout(() => {
-				selection.selectCol(
-					selectArea.begin.col + count,
-					selectArea.end.col + count,
-				);
-				command.removeCol();
-				selection.selectCol(index, index + count - 1);
-			}, 10);
 		} else {
-			command.insertColAt(
-				isNext ? index - 1 : index,
-				count,
-				isNext,
-				widths,
-				true,
-			);
-			selection.selectCol(index, index + count - 1);
+			command.removeCol();
+			const targetIndex = (isNext ? index - 1 : index) - count;
+			command.insertColAt(targetIndex, count, isNext, widths, true);
+			selection.selectCol(targetIndex + 1, targetIndex + count);
 			command.mockPaste(true);
-			setTimeout(() => {
-				selection.selectCol(selectArea.begin.col, selectArea.end.col);
-				command.removeCol();
-				selection.selectCol(index - count, index - 1);
-			}, 10);
 		}
 		this.placeholder?.css('display', 'none');
 		this.draggingHeader = undefined;
@@ -1263,33 +1392,17 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		const { begin, end } = selectArea;
 		command.mockCopy();
 		if (begin.row > index) {
-			command.insertRowAt(
-				isNext ? index - 1 : index,
-				count,
-				!isNext,
-				true,
-			);
+			const targetIndex = isNext ? index - 1 : index;
+			command.removeRow();
+			command.insertRowAt(targetIndex, count, !isNext, true);
 			selection.selectRow(index, index + count - 1);
-			setTimeout(() => {
-				command.mockPaste(true);
-				selection.selectRow(begin.row + count, end.row + count);
-				command.removeRow();
-				selection.selectRow(index, index + count - 1);
-			}, 10);
+			command.mockPaste(true);
 		} else {
-			command.insertRowAt(
-				isNext ? index - 1 : index,
-				count,
-				!isNext,
-				true,
-			);
-			selection.selectRow(index, index + count - 1);
-			setTimeout(() => {
-				command.mockPaste(true);
-				selection.selectRow(begin.row, end.row);
-				command.removeRow();
-				selection.selectRow(index - count, index - 1);
-			}, 10);
+			command.removeRow();
+			const targetIndex = (isNext ? index - 1 : index) - count;
+			command.insertRowAt(targetIndex, count, !isNext, true);
+			selection.selectRow(targetIndex + 1, targetIndex + count);
+			command.mockPaste(true);
 		}
 		this.placeholder?.css('display', 'none');
 		this.draggingHeader = undefined;
@@ -1318,13 +1431,14 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		headerElement.removeChild(item);
 		this.tableRoot?.css('width', this.colsHeader?.css('width'));
 	}
-
+	private menuSets = new WeakSet<Node>();
 	showContextMenu(event: MouseEvent) {
+		const editor = this.editor;
 		if (
 			!this.menuBar ||
 			!event.target ||
 			!this.table.wrapper ||
-			!this.editor.scrollNode
+			!editor.scrollNode
 		)
 			return;
 		event.preventDefault();
@@ -1342,17 +1456,23 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 				);
 				if (inputNode.length === 0) return;
 				const inputElement = inputNode.get<HTMLInputElement>()!;
-				inputNode
-					.on('blur', () => {
-						inputElement.value = (
-							parseInt(inputElement.value, 10) || 1
-						).toString();
-					})
-					.on('keydown', (event) => {
-						if (isHotkey('enter', event)) {
-							this.handleTriggerMenu(menuNode);
-						}
-					});
+				if (!this.menuSets.has(menu)) {
+					this.menuSets.add(menu);
+					inputNode
+						.on('blur', () => {
+							inputElement.value = Math.min(
+								parseInt(inputElement.value, 10) || 1,
+								this.MAX_INSERT_NUM,
+							).toString();
+						})
+						.on('keydown', (event) => {
+							if (isHotkey('enter', event)) {
+								this.handleTriggerMenu(menuNode);
+							}
+						});
+					inputNode.on('mousedown', this.onMenuInputMousedown);
+				}
+
 				const selectArea = selection.getSelectArea();
 				const isInsertCol =
 					['insertColLeft', 'insertColRight'].indexOf(action) > -1;
@@ -1368,7 +1488,6 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 						selectArea.end.row - selectArea.begin.row + 1
 					}`;
 				}
-				inputNode.on('mousedown', this.onMenuInputMousedown);
 			}
 		});
 		const splits = this.menuBar.find('div.split');
@@ -1410,7 +1529,7 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		const wrapperRect = this.table.wrapper
 			.get<HTMLElement>()!
 			.getBoundingClientRect();
-		const viewport = this.editor.scrollNode.getViewport();
+		const viewport = editor.scrollNode.getViewport();
 		top += event.offsetY;
 		const menuHeight = this.menuBar.height();
 		// 底部溢出
@@ -1440,14 +1559,6 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 		}
 		const menuItems = this.menuBar?.find(Template.MENUBAR_ITEM_CLASS);
 		menuItems?.removeClass('disabled');
-		menuItems?.each((menu) => {
-			const menuNode = $(menu);
-			const inputNode = menuNode.find(
-				`input${Template.MENUBAR_ITEM_INPUT_CALSS}`,
-			);
-			if (inputNode.length === 0) return;
-			inputNode.removeAllEvents();
-		});
 		this.contextVisible = false;
 		this.menuBar?.css({
 			top: '-99999px',
@@ -1497,11 +1608,15 @@ class ControllBar extends EventEmitter2 implements ControllBarInterface {
 			);
 			let args: undefined | number = undefined;
 			if (inputNode.length > 0) {
-				args = parseInt(
-					inputNode.get<HTMLInputElement>()?.value || '1',
-					10,
+				args = Math.min(
+					parseInt(
+						inputNode.get<HTMLInputElement>()?.value || '1',
+						10,
+					),
+					this.MAX_INSERT_NUM,
 				);
 			}
+
 			this.table.command[action](args);
 		}
 		this.hideContextMenu();

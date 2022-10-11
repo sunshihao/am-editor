@@ -19,12 +19,12 @@ new Engine(...,{ plugins:[Strikethrough] })
 
 ## Optional
 
-### hot key
+### Hotkey
 
 The default shortcut key is `mod+shift+x`, and multiple shortcut keys are passed in as an array
 
 ```ts
-//hot key,
+//hotkey,
 hotkey?: string | Array<string>;
 
 //Use configuration
@@ -33,25 +33,6 @@ new Engine(...,{
         "strikethrough":{
             //Modify shortcut keys
             hotkey: "shortcut key"
-        }
-    }
- })
-```
-
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-Strikethrough plugin markdown syntax is `~~`
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        "strikethrough":{
-            //Close markdown
-            markdown:false
         }
     }
  })

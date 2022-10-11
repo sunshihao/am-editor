@@ -9,6 +9,7 @@ import {
 	Position,
 	DATA_ELEMENT,
 	UI,
+	isEngine,
 } from '@aomao/engine';
 import Editor from './editor';
 import Preview from './preview';
@@ -136,7 +137,6 @@ class Toolbar {
 				defaultLink={href}
 				onLoad={() => {
 					this.mouseInContainer = true;
-					this.engine.trigger('select');
 				}}
 				onOk={(text: string, link: string) => this.onOk(text, link)}
 			/>
@@ -147,6 +147,7 @@ class Toolbar {
 		return (
 			<Preview
 				language={this.engine.language}
+				readonly={this.engine.readonly}
 				onEdit={() => {
 					if (!this.target) return;
 					this.mouseInContainer = false;
@@ -180,7 +181,7 @@ class Toolbar {
 		const container = this.root!.get<HTMLDivElement>()!;
 		ReactDOM.render(
 			<ConfigProvider autoInsertSpaceInButton={false}>
-				{!href || forceEdit
+				{(!href || forceEdit) && !this.engine.readonly
 					? this.editor(text, href)
 					: this.preview(href)}
 			</ConfigProvider>,
@@ -204,8 +205,8 @@ class Toolbar {
 				const { change, inline } = this.engine;
 				const range = change.range.get();
 				range.select(this.target, true);
-				change.range.select(range);
-				inline.unwrap();
+				inline.unwrap(range);
+				change.apply(range.collapse(true));
 			}
 			if (clearTarget !== false) this.target = undefined;
 		}

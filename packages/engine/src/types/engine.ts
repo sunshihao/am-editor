@@ -62,6 +62,29 @@ export interface EngineOptions extends EditorOptions {
 	 * 是否只读
 	 */
 	readonly?: boolean;
+	/**
+	 * 在编辑器头部单击空白处是否自动添加空行
+	 */
+	autoPrepend?: boolean;
+	/**
+	 * 在编辑器尾部单击空白处是否自动添加空行
+	 */
+	autoAppend?: boolean;
+	/**
+	 * markdown 配置
+	 */
+	markdown?: {
+		/**
+		 * markdown 模式，默认 执行 check 函数返回 true 就直接转换
+		 * 1. 使用 confirm 模式，调用 engine.messageConfirm 确认后再次转换
+		 * 2. false 为关闭全部 markdown 功能
+		 */
+		mode?: 'confirm' | false;
+		/**
+		 * 检测是否为 markdown 语法，如果为 true 则将 makrdown 转换后粘贴
+		 */
+		check?: (text: string, html: string) => Promise<string | false>;
+	};
 }
 
 export interface Engine<T extends EngineOptions = EngineOptions> {
@@ -178,6 +201,11 @@ export interface EngineInterface<T extends EngineOptions = EngineOptions>
 	 */
 	getJsonValue(): string | undefined | (string | {})[];
 	/**
+	 * 获取纯文本
+	 * @param includeCard 是否包含卡片内的
+	 */
+	getText(includeCard?: boolean): string;
+	/**
 	 * 展示 placeholder
 	 */
 	showPlaceholder(): void;
@@ -252,6 +280,23 @@ export interface EngineInterface<T extends EngineOptions = EngineOptions>
 	 */
 	on(
 		eventType: 'parse:value',
+		listener: (
+			node: NodeInterface,
+			attributes: { [key: string]: string },
+			styles: { [key: string]: string },
+			value: Array<string>,
+		) => boolean | void,
+		rewrite?: boolean,
+	): void;
+	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	on(
+		eventType: 'parse:text',
 		listener: (
 			node: NodeInterface,
 			attributes: { [key: string]: string },
@@ -444,6 +489,22 @@ export interface EngineInterface<T extends EngineOptions = EngineOptions>
 		) => boolean | void,
 	): void;
 	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	off(
+		eventType: 'parse:text',
+		listener: (
+			node: NodeInterface,
+			attributes: { [key: string]: string },
+			styles: { [key: string]: string },
+			value: Array<string>,
+		) => boolean | void,
+	): void;
+	/**
 	 * 解析DOM节点，生成符合标准的 XML。生成xml代码结束后触发
 	 * @param value xml代码
 	 */
@@ -582,6 +643,20 @@ export interface EngineInterface<T extends EngineOptions = EngineOptions>
 	 */
 	trigger(
 		eventType: 'parse:value',
+		node: NodeInterface,
+		attributes: { [key: string]: string },
+		styles: { [key: string]: string },
+		value: Array<string>,
+	): boolean | void;
+	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	trigger(
+		eventType: 'parse:text',
 		node: NodeInterface,
 		attributes: { [key: string]: string },
 		styles: { [key: string]: string },

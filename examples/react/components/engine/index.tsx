@@ -6,7 +6,7 @@ import React, {
 } from 'react';
 import message from 'antd/es/message';
 import Modal from 'antd/es/modal';
-import Engine, { EngineInterface, EngineOptions } from '@aomao/engine';
+import Engine, { EngineInterface, EngineOptions, Parser } from '@aomao/engine';
 import 'antd/es/message/style';
 import 'antd/es/modal/style';
 
@@ -31,13 +31,16 @@ const EngineComponent: React.FC<EngineProps> = forwardRef<
 
 		const engine = new Engine(container.current, options);
 
-		engine.messageSuccess = (msg: string) => {
+		engine.messageSuccess = (type: string, msg: string, ...args: any[]) => {
+			console.log(type, msg, ...args);
 			message.success(msg);
 		};
-		engine.messageError = (error: string) => {
+		engine.messageError = (type: string, error: string, ...args: any[]) => {
+			console.error(type, error, ...args);
 			message.error(error);
 		};
-		engine.messageConfirm = (msg: string) => {
+		engine.messageConfirm = (type: string, msg: string, ...args: any[]) => {
+			console.log(type, msg, ...args);
 			return new Promise<boolean>((resolve, reject) => {
 				Modal.confirm({
 					content: msg,
@@ -46,7 +49,8 @@ const EngineComponent: React.FC<EngineProps> = forwardRef<
 				});
 			});
 		};
-
+		window.engine = engine;
+		window.Parser = Parser;
 		engineRef.current = engine;
 		return engine;
 	};

@@ -12,7 +12,7 @@ import Toolbar, { ToolbarPlugin, ToolbarComponent } from '@aomao/toolbar';
 -ToolbarPlugin provides plugins to the engine
 -ToolbarComponent provides the card component to the engine
 
-Except for the `Toolbar` component, the latter two are shortcuts to realize the toolbar card plug-in option when you press `/` in the editor
+Except for the `Toolbar` component, the latter two are shortcuts to realize the toolbar card plugin option when you press `/` in the editor
 
 ## Types of
 
@@ -24,7 +24,7 @@ There are now four ways to display the toolbar
 
 The attributes that the Toolbar component needs to pass in:
 
--An instance of the `editor` editor, which can be used to automatically invoke the plug-in execution -`items` plugin display configuration list
+-An instance of the `editor` editor, which can be used to automatically invoke the plugin execution -`items` plugin display configuration list
 
 ## Configuration item
 
@@ -34,7 +34,7 @@ items is a two-dimensional array. We can put plugins of the same concept in a gr
 items: [['collapse'], ['bold', 'italic']];
 ```
 
-All the display forms of the existing plug-ins have been configured in the Toolbar component, and we can directly pass in the plug-in name to use these configurations. Of course, we can also pass in an object to cover part of the configuration
+All the display forms of the existing plugins have been configured in the Toolbar component, and we can directly pass in the plugin name to use these configurations. Of course, we can also pass in an object to cover part of the configuration
 
 ```ts
 items: [
@@ -52,7 +52,17 @@ items: [
 
 If the default configuration is found through the `name` attribute, the `type` attribute will not be overwritten. If the configured `name` is not part of the default configuration, it will be processed according to the custom button
 
-## pop-up windows
+## Toolbar components
+
+To use the toolbar in the form of components, you need to pass in the engine instance and items configuration items
+
+```ts
+import Toolbar from '@aomao/toolbar';
+
+<Toolbar engine={engine} items={items} />;
+```
+
+## Popup
 
 Follow the mouse to drag the selected toolbar pop-up box
 
@@ -76,6 +86,36 @@ const toolbarOptions: ToolbarOptions = {
             },
         ],
     },
+};
+new Engine(...,{ config: {
+     [ToolbarPlugin.pluginName]: toolbarOptions,
+} })
+
+```
+
+## Shortcuts popup toolbar
+
+Popup card toolbar after typing /
+
+```ts
+import { ToolbarPlugin } from '@aomao/toolbar';
+import type { ToolbarOptions } from '@aomao/toolbar';
+const toolbarOptions: ToolbarOptions = {
+    // or configure config: false to turn off this feature
+    config: [
+        {
+            title: 'Group title', // optional
+            items: [
+                'image-uploader',
+                'codeblock',
+                'table',
+                'file-uploader',
+                'video-uploader',
+                'math',
+                'status',
+            ],
+        },
+    ],
 };
 new Engine(...,{ config: {
      [ToolbarPlugin.pluginName]: toolbarOptions,
@@ -112,7 +152,7 @@ It can be a React component, or it can be a string of html in Vue. Or a method, 
 List item selected event, return `false`, the default command of list item configuration will not be executed
 
 ```ts
-onSelect?: (event: React.MouseEvent, name: string) => void | boolean;
+onSelect?: (event: React.MouseEvent, name: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ### groups
@@ -194,7 +234,7 @@ The basic properties are the same as the `button` properties, which can be viewe
 
 #### search
 
-To query characters, in the toolbar plug-in, we can use `/` to call up shortcut options in the editor, and search for related cards, so you can specify a combination of related keywords and characters here
+To query characters, in the toolbar plugin, we can use `/` to call up shortcut options in the editor, and search for related cards, so you can specify a combination of related keywords and characters here
 
 #### description
 
@@ -211,7 +251,7 @@ The effect is similar to the `table` card item. After the input is moved in, a t
 List item click event, return `false` will not execute the configured default command
 
 ```ts
-onClick?: (event: React.MouseEvent, name: string) => void | boolean;
+onClick?: (event: React.MouseEvent, name: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ## Button
@@ -276,11 +316,11 @@ placement?:
     |'rightBottom';
 ```
 
-### hotkey
+### Hotkey
 
-Whether to display the hot key, or set the information of the hot key
+Whether to display the hotkey, or set the information of the hotkey
 
-The default is to display the hotkey to the prompt message (`title`), and use the `name` information to find the hotkey set by the plug-in
+The default is to display the hotkey to the prompt message (`title`), and use the `name` information to find the hotkey set by the plugin
 
 ```ts
 hotkey?: boolean | string;
@@ -288,13 +328,13 @@ hotkey?: boolean | string;
 
 ### autoExecute
 
-When the button is clicked, whether to automatically execute the plug-in command, it is enabled by default
+When the button is clicked, whether to automatically execute the plugin command, it is enabled by default
 
 ### command
 
-Plug-in command or parameter
+Plugin command or parameter
 
-If this parameter is configured and the `autoExecute` property is enabled, when the button is clicked, this configuration is called to execute the plug-in command
+If this parameter is configured and the `autoExecute` property is enabled, when the button is clicked, this configuration is called to execute the plugin command
 
 If `name` is configured, execute the plugin corresponding to `name`, otherwise execute the plugin corresponding to `name` specified by `button`
 
@@ -315,7 +355,7 @@ Mouse click event
 If it returns false, the plugin command will not be executed automatically
 
 ```ts
-onClick?: (event: React.MouseEvent) => void | boolean;
+onClick?: (event: React.MouseEvent, engine?: EngineInterface) => void | boolean;
 ```
 
 ### onMouseDown
@@ -323,7 +363,7 @@ onClick?: (event: React.MouseEvent) => void | boolean;
 Mouse button press event
 
 ```ts
-onMouseDown?: (event: React.MouseEvent) => void;
+onMouseDown?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onMouseEnter
@@ -331,7 +371,7 @@ onMouseDown?: (event: React.MouseEvent) => void;
 Mouse in button event
 
 ```ts
-onMouseEnter?: (event: React.MouseEvent) => void;
+onMouseEnter?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onMouseLeave
@@ -339,12 +379,12 @@ onMouseEnter?: (event: React.MouseEvent) => void;
 Mouse off button event
 
 ```ts
-onMouseLeave?: (event: React.MouseEvent) => void;
+onMouseLeave?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onActive
 
-The custom button is activated and selected, and the plug-in `engine.command.queryState` method is called by default
+The custom button is activated and selected, and the plugin `engine.command.queryState` method is called by default
 
 ```ts
 onActive?: () => boolean;
@@ -390,7 +430,7 @@ Drop-down list items, similar to buttons
 items:[{
     key: string;
     icon?: React.ReactNode;
-    content?: React.ReactNode | (() => React.ReactNode);
+    content?: React.ReactNode | ((engine?: EngineInterface) => React.ReactNode);
     hotkey?: boolean | string;
     isDefault?: boolean;
     title?: string;
@@ -471,7 +511,7 @@ direction?:'vertical' |'horizontal';
 List item selection event, return `false` will not automatically execute the command configured for the selected item
 
 ```ts
-onSelect?: (event: React.MouseEvent, key: string) => void | boolean;
+onSelect?: (event: React.MouseEvent, key: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ### hasArrow
@@ -497,12 +537,12 @@ Custom render the content displayed after the drop-down list is selected, the de
 Can return React components or Vue can return html strings
 
 ```ts
-renderContent?: (item: DropdownListItem) => React.ReactNode;
+renderContent?: (item: DropdownListItem, engine?: EngineInterface) => React.ReactNode;
 ```
 
 ### onActive
 
-The custom button is activated and selected, and the plug-in `engine.command.queryState` method is called by default
+The custom button is activated and selected, and the plugin `engine.command.queryState` method is called by default
 
 ```ts
 onActive?: () => boolean;

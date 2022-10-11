@@ -55,13 +55,11 @@ class Pswp extends EventEmitter2 implements PswpInterface {
 		this.barUI = this.root.find('.data-pswp-custom-top-bar');
 		this.closeUI = this.root.find('.data-pswp-button-close');
 		$(document.body).append(this.root);
-		this.zoomUI = new Zoom(this.editor, this);
+		this.zoomUI = new Zoom(editor, this);
 		this.zoomUI.render();
-		if (!isMobile) {
-			this.bindKeyboardEvnet();
-			this.hoverControllerFadeInAndOut();
-		}
+		this.reset();
 		this.bindClickEvent();
+		window.addEventListener('resize', this.reset);
 	}
 
 	renderTemplate() {
@@ -75,35 +73,57 @@ class Pswp extends EventEmitter2 implements PswpInterface {
                     <div class="pswp__item"></div>
                 </div>
                 <div class="pswp__ui pswp__ui--hidden">
-                    <button class="pswp__button data-pswp-button-close" title="Close (Esc)"></button>
+                    <button type="button" class="pswp__button data-pswp-button-close" title="Close (Esc)"></button>
                     <div class="data-pswp-custom-top-bar"></div>
                 </div>
             </div>
         </div>`);
-		root.addClass(isMobile ? 'data-pswp-mobile' : 'data-pswp-pc');
 		return root;
 	}
 
-	hoverControllerFadeInAndOut() {
-		this.barUI.on('mouseenter', () => {
-			this.removeFadeOut(this.barUI, 'barFadeInAndOut');
-			this.removeFadeOut(this.closeUI, 'closeFadeInAndOut');
-		});
+	reset = () => {
+		this.root.removeClass(isMobile ? 'data-pswp-mobile' : 'data-pswp-pc');
+		this.root.addClass(isMobile ? 'data-pswp-mobile' : 'data-pswp-pc');
+		this.unbindKeyboardEvnet();
+		this.unbindControllerFadeInAndOut();
+		if (!isMobile) {
+			this.bindKeyboardEvnet();
+			this.bindControllerFadeInAndOut();
+		}
+	};
 
-		this.barUI.on('mouseleave', () => {
-			this.fadeOut(this.barUI, 'barFadeInAndOut');
-			this.fadeOut(this.closeUI, 'closeFadeInAndOut');
-		});
+	onBarMouseEnter = () => {
+		this.removeFadeOut(this.barUI, 'barFadeInAndOut');
+		this.removeFadeOut(this.closeUI, 'closeFadeInAndOut');
+	};
 
-		this.closeUI.on('mouseenter', () => {
-			this.removeFadeOut(this.barUI, 'barFadeInAndOut');
-			this.removeFadeOut(this.closeUI, 'closeFadeInAndOut');
-		});
+	onBarMouseLeave = () => {
+		this.fadeOut(this.barUI, 'barFadeInAndOut');
+		this.fadeOut(this.closeUI, 'closeFadeInAndOut');
+	};
 
-		this.closeUI.on('mouseleave', () => {
-			this.fadeOut(this.barUI, 'barFadeInAndOut');
-			this.fadeOut(this.closeUI, 'closeFadeInAndOut');
-		});
+	onCloseMouseEnter = () => {
+		this.removeFadeOut(this.barUI, 'barFadeInAndOut');
+		this.removeFadeOut(this.closeUI, 'closeFadeInAndOut');
+	};
+
+	onCloseMouseLeave = () => {
+		this.fadeOut(this.barUI, 'barFadeInAndOut');
+		this.fadeOut(this.closeUI, 'closeFadeInAndOut');
+	};
+
+	bindControllerFadeInAndOut() {
+		this.barUI.on('mouseenter', this.onBarMouseEnter);
+		this.barUI.on('mouseleave', this.onBarMouseLeave);
+		this.closeUI.on('mouseenter', this.onCloseMouseEnter);
+		this.closeUI.on('mouseleave', this.onCloseMouseLeave);
+	}
+
+	unbindControllerFadeInAndOut() {
+		this.barUI.off('mouseenter', this.onBarMouseEnter);
+		this.barUI.off('mouseleave', this.onBarMouseLeave);
+		this.closeUI.off('mouseenter', this.onCloseMouseEnter);
+		this.closeUI.off('mouseleave', this.onCloseMouseLeave);
 	}
 
 	removeFadeOut(node: NodeInterface, id: string) {
@@ -205,17 +225,23 @@ class Pswp extends EventEmitter2 implements PswpInterface {
 		}
 	}
 
+	onKeyboardEvent = (event: KeyboardEvent) => {
+		if ((event.metaKey || event.ctrlKey) && 187 === event.keyCode) {
+			event.preventDefault();
+			this.zoomIn();
+		}
+		if (isHotkey('mod+-', event)) {
+			event.preventDefault();
+			this.zoomOut();
+		}
+	};
+
 	bindKeyboardEvnet() {
-		this.root.on('keydown', (event) => {
-			if ((event.metaKey || event.ctrlKey) && 187 === event.keyCode) {
-				event.preventDefault();
-				this.zoomIn();
-			}
-			if (isHotkey('mod+-', event)) {
-				event.preventDefault();
-				this.zoomOut();
-			}
-		});
+		this.root.on('keydown', this.onKeyboardEvent);
+	}
+
+	unbindKeyboardEvnet() {
+		this.root.off('keydown', this.onKeyboardEvent);
 	}
 
 	zoomToOriginSize() {
@@ -331,6 +357,7 @@ class Pswp extends EventEmitter2 implements PswpInterface {
 	};
 
 	destroy() {
+		window.removeEventListener('resize', this.reset);
 		this.close();
 	}
 }

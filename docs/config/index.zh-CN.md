@@ -20,7 +20,7 @@ const engine = new Engine(渲染节点, {
 -   详细：语言配置，暂时支持 `zh-CN`、`en-US`。可使用 `locale` 配置
 
 ```ts
-const view = new View(渲染节点, {
+const engine = new Engine(渲染节点, {
 	lang: 'zh-CN',
 });
 ```
@@ -34,7 +34,7 @@ const view = new View(渲染节点, {
 语言包，默认语言包 [https://github.com/yanmao-cc/am-editor/blob/master/locale](https://github.com/yanmao-cc/am-editor/blob/master/locale)
 
 ```ts
-const view = new View(渲染节点, {
+const engine = new Engine(渲染节点, {
 	locale: {
 		'zh-CN': {
 			test: '测试',
@@ -44,7 +44,7 @@ const view = new View(渲染节点, {
 		},
 	},
 });
-console.log(view.language.get<string>('test'));
+console.log(engine.language.get<string>('test'));
 ```
 
 ### className
@@ -79,18 +79,13 @@ console.log(view.language.get<string>('test'));
 
 ### config
 
--   类型: `{ [key: string]: PluginOptions }`
+-   类型: `{ [key: string]: PluginOptions }` 或者 `(editor) => { [key: string]: PluginOptions }`
 -   默认值：`{}`
--   详细：每个插件的配置项，key 为插件名称，详细配置请参考每个插件的说明。 [配置案例](https://github.com/yanmao-cc/am-editor/blob/master/examples/react/components/editor/config.tsx)
+-   详细：每个插件的配置项，key 为插件名称，详细配置请参考每个插件的说明。 [配置 DEMO](https://github.com/yanmao-cc/am-editor/blob/master/examples/react/components/editor/config.tsx)
 
 一些插件需要额外属性的配置:
 
 ```ts
-// 配置斜体 markdown 语法
-[Italic.pluginName]: {
-    // 默认为 _ 下划线，这里修改为单个 * 号
-    markdown: '*',
-},
 // 图片上传
 [ImageUploader.pluginName]: {
     file: {
@@ -233,8 +228,69 @@ console.log(view.language.get<string>('test'));
 -   默认值：查找父级样式 `overflow` 或者 `overflow-y` 为 `auto` 或者 `scroll` 的节点，如果没有就取 `document.documentElement`
 -   详细：编辑器滚动条节点，主要用于监听 `scroll` 事件设置弹层浮动位置和主动设置滚动到编辑器目标位置
 
+或者使用 `setScrollNode` 设置
+
+```ts
+engine.setScrollNode(滚动条节点);
+```
+
 ### lazyRender
 
 -   类型: `boolena`
 -   默认值：`true`
--   详细：懒惰渲染卡片（仅限已启用 lazyRender 的卡片），默认为 true
+-   详细：懒惰渲染卡片（仅限已启用 lazyRender 的卡片），默认为 true。协同状态下可编辑卡片不会懒惰渲染
+
+### iconFonts
+
+-   类型: `Record<'url' | 'format', string>[] | string | false`
+-   默认值：`url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff?t=1638071536645') format('woff'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype')`
+-   详细：定义 iconfont 文件的 url，默认使用 at.alicdn.com 的字体文件，如果需要使用其他位置的字体文件，可以使用此配置
+
+```ts
+const engine = new Engine(渲染节点, {
+	iconFonts: [
+		{
+			url: '//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645',
+			format: 'woff2',
+			// ...
+		},
+	],
+	// or
+	iconFonts:
+		"url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff?t=1638071536645') format('woff'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype')",
+});
+```
+
+### autoPrepend
+
+-   类型：`boolean`
+-   默认值：`true`
+-   详细：在编辑器头部单击空白处是否自动添加空行（<div style="padding-top: 20px;"></div>）在 padding-top 这 20 像素内点击会添加空行
+
+### autoAppend
+
+-   类型：`boolean`
+-   默认值：`true`
+-   详细：在编辑器尾部单击空白处是否自动添加空行（<div style="padding-bottom: 20px;"></div>）在 padding-bottom 这 20 像素内点击会添加空行
+
+### markdown
+
+类型：
+
+```ts
+markdown?: {
+	/**
+	 * markdown 模式，默认 执行 check 函数返回 true 就直接转换
+	 * 1. 使用 confirm 模式，调用 engine.messageConfirm 确认后再次转换
+	 * 2. false 为关闭全部 markdown 功能
+	 */
+	mode?: 'confirm' | false;
+	/**
+	 * 检测是否为 markdown 语法，如果为 true 则将 makrdown 转换后粘贴，如果默认检测不满足需求可以使用此函数进行自定义检测
+	 */
+	check?: (text: string, html: string) => Promise<string | false>;
+};
+```
+
+-   默认值：`undefined`
+-   markdown 模式，默认为检测到 markdown 语法就直接转换。使用 `confirm` 模式，需要调用`engine.messageConfirm`确认后再转换。

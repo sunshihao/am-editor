@@ -3,9 +3,9 @@ import {
 	NodeInterface,
 	InlinePlugin,
 	isEngine,
-	PluginEntry,
 	PluginOptions,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import Toolbar from './toolbar';
 import locales from './locales';
 
@@ -13,8 +13,20 @@ import './index.css';
 
 export interface LinkOptions extends PluginOptions {
 	hotkey?: string | Array<string>;
-	markdown?: string;
+	markdown?: boolean;
+	onConfirm?: (
+		text: string,
+		link: string,
+	) => Promise<{ text: string; link: string }>;
+	enableToolbar?: boolean;
+	onLinkClick?: (e: MouseEvent, link: string) => void;
 }
+
+const PASTE_EACH = 'paste:each';
+const MARKDOWN_IT = 'markdown-it';
+const PARSE_HTML = 'parse:html';
+const SELECT = 'select';
+
 export default class<
 	T extends LinkOptions = LinkOptions,
 > extends InlinePlugin<T> {
@@ -39,34 +51,42 @@ export default class<
 
 	tagName = 'a';
 
-	markdown =
-		this.options.markdown === undefined
-			? '[^!]\\[(.+?)\\]\\(s*([\\S]+?)\\s*\\)$'
-			: this.options.markdown;
-
 	init() {
 		super.init();
 		const editor = this.editor;
 		if (isEngine(editor)) {
-			this.toolbar = new Toolbar(editor, {
-				onConfirm: this.options.onConfirm,
-			});
+			if (this.options.enableToolbar !== false) {
+				this.toolbar = new Toolbar(editor, {
+					onConfirm: this.options.onConfirm,
+				});
+			}
+			editor.container.on('click', this.handleClick);
+			editor.on(MARKDOWN_IT, this.markdownIt);
+			editor.on(PASTE_EACH, this.pasteHtml);
 		}
-		editor.on('paste:each', (child) => this.pasteHtml(child));
-		editor.on('parse:html', (node) => this.parseHtml(node));
-		editor.on('select', () => {
-			this.query();
-		});
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(SELECT, this.bindQuery);
 		editor.language.add(locales);
 	}
+
+	handleClick = (e: MouseEvent) => {
+		if (!e.target) return;
+		const { onLinkClick } = this.options;
+		if (!onLinkClick) return;
+		const target = $(e.target).closest(`${this.tagName}`);
+		if (target.name === this.tagName) {
+			onLinkClick(e, target.attributes('href'));
+		}
+	};
 
 	hotkey() {
 		return this.options.hotkey || { key: 'mod+k', args: ['_blank'] };
 	}
 
 	execute() {
-		if (!isEngine(this.editor)) return;
-		const { inline, change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { inline, change } = editor;
 		if (!this.queryState()) {
 			const inlineNode = $(`<${this.tagName} />`);
 			this.setStyle(inlineNode, ...arguments);
@@ -91,9 +111,14 @@ export default class<
 		}
 	}
 
-	query() {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+	bindQuery = () => {
+		this.query();
+	};
+
+	query = () => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		const inlineNode = change.inlines.find((node) => this.isSelf(node));
 		this.toolbar?.hide(inlineNode);
 		if (inlineNode && inlineNode.length > 0 && !inlineNode.isCard()) {
@@ -110,94 +135,54 @@ export default class<
 			}
 		}
 		return false;
-	}
+	};
 
 	queryState() {
 		return this.query();
 	}
 
-	triggerMarkdown(event: KeyboardEvent, text: string, node: NodeInterface) {
-		const editor = this.editor;
-		if (!isEngine(editor) || !this.markdown) return;
-		const match = new RegExp(this.markdown).exec(text);
-		if (match) {
-			const { command } = editor;
-			event.preventDefault();
-			const text = match[1];
-			const url = match[2];
-			// 移除 markdown 语法
-			const markdownTextNode = node
-				.get<Text>()!
-				.splitText(node.text().length - match[0].length);
-			markdownTextNode.splitText(match[0].length);
-			$(markdownTextNode).remove();
-			command.execute(
-				(this.constructor as PluginEntry).pluginName,
-				'_blank',
-				url,
-				text,
-			);
-			editor.node.insertText('\xA0');
-			return false;
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('link');
+			mardown.enable('linkify');
 		}
-		return;
-	}
+	};
 
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		if (!text) return;
-
-		const reg = /(\[(.+?)\]\(\s*([\S]+?)\s*\))/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		let { reg, match } = result;
-		if (!match) return;
-
-		let newText = '';
-		let textNode = node.clone(true).get<Text>()!;
-		while (
-			textNode.textContent &&
-			(match = reg.exec(textNode.textContent))
-		) {
-			//从匹配到的位置切断
-			let regNode = textNode.splitText(match.index);
+	pasteHtml = (child: NodeInterface) => {
+		if (child.isText()) {
+			const text = child.text();
+			const { node, inline } = this.editor;
 			if (
-				textNode.textContent.endsWith('!') ||
-				match[2].startsWith('!')
+				/^https?:\/\/\S+$/.test(text.toLowerCase().trim()) &&
+				inline.closest(child).equal(child)
 			) {
-				newText += textNode.textContent;
-				textNode = regNode.splitText(match[0].length);
-				newText += regNode.textContent;
-				continue;
+				const newNode = node.wrap(
+					child,
+					$(
+						`<${this.tagName} target="_blank" href="${decodeURI(
+							text,
+						)
+							.trim()
+							.replace(/\u200b/g, '')}"></a>`,
+					),
+				);
+				inline.repairCursor(newNode);
+				return false;
 			}
-			newText += textNode.textContent;
-			//从匹配结束位置分割
-			textNode = regNode.splitText(match[0].length);
-
-			const text = match[2];
-			const url = match[3];
-
-			const inlineNode = $(`<${this.tagName} />`);
-			this.setAttributes(inlineNode, '_blank', (url || '').trim());
-			inlineNode.html(!!text ? text : url);
-
-			newText += inlineNode.get<Element>()?.outerHTML;
+		} else if (child.name === 'a') {
+			const href = child.attributes('href');
+			child.attributes('target', '_blank');
+			child.attributes(
+				'href',
+				decodeURI(href)
+					.trim()
+					.replace(/\u200b/g, ''),
+			);
 		}
-		newText += textNode.textContent;
-		node.text(newText);
-	}
+		return true;
+	};
 
-	parseHtml(root: NodeInterface) {
+	parseHtml = (root: NodeInterface) => {
 		root.find(this.tagName).css({
 			'font-family': 'monospace',
 			'font-size': 'inherit',
@@ -209,23 +194,14 @@ export default class<
 			'overflow-wrap': 'break-word',
 			'text-indent': '0',
 		});
-	}
+	};
 
-	pasteHtml(child: NodeInterface) {
-		if (child.isText()) {
-			const text = child.text();
-			const { node, inline } = this.editor;
-			if (
-				/^https?:\/\/\S+$/.test(text.toLowerCase().trim()) &&
-				!inline.closest(child).equal(child)
-			) {
-				node.wrap(
-					child,
-					$(`<${this.tagName} target="_blank" href="${text}"></a>`),
-				);
-				return false;
-			}
-		}
-		return true;
+	destroy(): void {
+		const editor = this.editor;
+		editor.container.off('click', this.handleClick);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(SELECT, this.bindQuery);
+		editor.off(MARKDOWN_IT, this.markdownIt);
 	}
 }

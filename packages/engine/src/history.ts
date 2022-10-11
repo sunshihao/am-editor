@@ -1,13 +1,15 @@
-import { cloneDeep, debounce, findLastIndex, omit } from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import debounce from 'lodash/debounce';
+import findLastIndex from 'lodash/findLastIndex';
 import { Op } from 'sharedb';
 import OTJSON from 'ot-json0';
 import { Operation, TargetOp } from './types/ot';
-import { random } from './utils';
-import { isCursorOp, isReverseOp, isTransientElement } from './ot/utils';
+import { decodeCardValue, random } from './utils';
+import { findCardForDoc, isReverseOp, isTransientElement } from './ot/utils';
 import { EngineInterface } from './types/engine';
 import { HistoryInterface } from './types/history';
 import { $ } from './node';
-import { DATA_ID } from './constants';
+import { CARD_VALUE_KEY, DATA_ID } from './constants';
 
 /**
  * 历史记录管理器
@@ -94,15 +96,12 @@ class HistoryModel implements HistoryInterface {
 			try {
 				const { ot } = this.engine;
 				ot.submitOps(undoOp.ops || []);
-				const applyNodes = ot.consumer.handleSelfOperations(
-					undoOp.ops!,
-				);
-				ot.consumer.handleIndex(undoOp.ops || [], applyNodes);
+				ot.consumer.handleSelfOperations(undoOp.ops!);
 				this.currentActionIndex--;
 				isUndo = true;
-			} catch (error) {
+			} catch (error: any) {
 				this.reset();
-				console.error(error);
+				this.engine.messageError('history-undo', error);
 			}
 			if (this.engine.isEmpty()) this.engine.change.initValue();
 
@@ -129,15 +128,12 @@ class HistoryModel implements HistoryInterface {
 			try {
 				const { ot } = this.engine;
 				ot.submitOps(redoOp.ops || []);
-				const applyNodes = ot.consumer.handleSelfOperations(
-					redoOp.ops!,
-				);
-				ot.consumer.handleIndex(redoOp.ops || [], applyNodes);
+				ot.consumer.handleSelfOperations(redoOp.ops!);
 				this.currentActionIndex++;
 				isRedo = true;
-			} catch (error) {
+			} catch (error: any) {
 				this.reset();
-				console.error(error);
+				this.engine.messageError('history-redo', error);
 			}
 
 			if (isRedo) {
@@ -172,7 +168,7 @@ class HistoryModel implements HistoryInterface {
 				this.actionOps.splice(this.currentActionIndex);
 				this.actionOps.push(this.currentAction);
 				this.currentActionIndex = this.actionOps.length;
-				this.engine.change.change();
+				this.engine.trigger('historyChange');
 			}
 			this.currentAction = {};
 			// 保存成功后清除操作前记录的range
@@ -181,32 +177,27 @@ class HistoryModel implements HistoryInterface {
 	}
 
 	handleSelfOps(ops: Op[]) {
-		if (!this.currentAction?.self && ops.some((op) => !isCursorOp(op)))
-			this.saveOp();
+		if (!this.currentAction?.self) this.saveOp();
 		let isSave = false;
 		ops.forEach((op) => {
-			if (!isCursorOp(op)) {
-				isSave = true;
-				if (this.filterEvents.some((filter) => filter(op))) {
-					if (this.actionOps.length > 0 && !op['nl'])
-						this.actionOps[this.actionOps.length - 1].ops?.push(op);
-				} else {
-					this.currentAction.self = true;
-					if (!this.currentAction.ops) this.currentAction.ops = [];
+			isSave = true;
+			if (this.filterEvents.some((filter) => filter(op))) {
+				if (this.actionOps.length > 0 && !op['nl'])
+					this.actionOps[this.actionOps.length - 1].ops?.push(op);
+			} else {
+				this.currentAction.self = true;
+				if (!this.currentAction.ops) this.currentAction.ops = [];
 
-					if (!this.currentAction.startRangePath) {
-						this.currentAction.startRangePath =
-							this.getRangePathBeforeCommand();
-					}
-					const lastOp =
-						this.currentAction.ops[
-							this.currentAction.ops.length - 1
-						];
-					if (lastOp && isReverseOp(op, lastOp)) {
-						this.currentAction.ops.pop();
-					} else {
-						this.currentAction.ops.push(op);
-					}
+				if (!this.currentAction.startRangePath) {
+					this.currentAction.startRangePath =
+						this.getRangePathBeforeCommand();
+				}
+				const lastOp =
+					this.currentAction.ops[this.currentAction.ops.length - 1];
+				if (lastOp && isReverseOp(op, lastOp)) {
+					this.currentAction.ops.pop();
+				} else {
+					this.currentAction.ops.push(op);
 				}
 			}
 		});
@@ -238,6 +229,40 @@ class HistoryModel implements HistoryInterface {
 			} else if (callback === undefined) {
 				this.lazySave();
 			}
+		}
+	}
+
+	handleNLCardValue(op: TargetOp) {
+		const key = op.p[op.p.length - 1];
+		if (
+			op.nl === true &&
+			typeof key === 'string' &&
+			key === CARD_VALUE_KEY &&
+			op['oi']
+		) {
+			const oiVal = op['oi'];
+			const newVal = decodeCardValue(oiVal);
+			this.actionOps.forEach((action) => {
+				action.ops?.forEach((op) => {
+					if (op.p[op.p.length - 1] === CARD_VALUE_KEY && op['oi']) {
+						const oldVal = decodeCardValue(op['oi']);
+						if (newVal.id === oldVal.id) {
+							op['oi'] = newVal;
+						}
+					} else if (op['li']) {
+						findCardForDoc(op['li'], (attrs) => {
+							const value = decodeCardValue(
+								attrs[CARD_VALUE_KEY],
+							);
+							if (value.id === newVal.id) {
+								attrs[CARD_VALUE_KEY] = oiVal;
+								return true;
+							}
+							return false;
+						});
+					}
+				});
+			});
 		}
 	}
 
@@ -316,9 +341,7 @@ class HistoryModel implements HistoryInterface {
 				}
 			}
 		});
-		ops = ops.filter((o) => !isCursorOp(o));
 		ops.forEach((op) => {
-			if (isCursorOp(op)) return;
 			if (!this.currentAction.ops) {
 				this.currentAction.ops = [];
 			}
@@ -402,8 +425,8 @@ class HistoryModel implements HistoryInterface {
 					rangePath: prevOp.rangePath,
 					startRangePath: prevOp.startRangePath,
 				};
-			} catch (error) {
-				console.error(error);
+			} catch (error: any) {
+				this.engine.messageError('history-undo-op', error);
 			}
 		}
 		return;
@@ -437,8 +460,8 @@ class HistoryModel implements HistoryInterface {
 					rangePath: currentOp.rangePath,
 					startRangePath: currentOp.startRangePath,
 				};
-			} catch (error) {
-				console.error(error);
+			} catch (error: any) {
+				this.engine.messageError('history-redo-op', error);
 			}
 		}
 		return;

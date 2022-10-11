@@ -56,6 +56,16 @@ items: [
 
 如果通过 `name` 属性找到了默认配置，那么 `type` 属性是不会被覆盖的。如果配置的`name`不属于默认配置的一部分，就按照自定义按钮处理
 
+## 工具栏组件
+
+通过组件形式使用工具栏，需要传入引擎实例和 items 配置项
+
+```ts
+import Toolbar from '@aomao/toolbar';
+
+<Toolbar engine={engine} items={items} />;
+```
+
 ## 弹出框
 
 跟随鼠标拖蓝选中后的工具栏弹出框
@@ -80,6 +90,36 @@ const toolbarOptions: ToolbarOptions = {
 			},
 		],
 	},
+};
+new Engine(...,{ config: {
+    [ToolbarPlugin.pluginName]: toolbarOptions,
+} })
+
+```
+
+## 快捷键弹出工具栏
+
+输入 / 后弹出卡片工具栏
+
+```ts
+import { ToolbarPlugin } from '@aomao/toolbar';
+import type { ToolbarOptions } from '@aomao/toolbar';
+const toolbarOptions: ToolbarOptions = {
+	// 或者配置 config: false 关闭此功能
+	config: [
+		{
+			title: '分组标题',// 可选
+			items: [
+				'image-uploader',
+				'codeblock',
+				'table',
+				'file-uploader',
+				'video-uploader',
+				'math',
+				'status',
+			],
+		},
+	],
 };
 new Engine(...,{ config: {
     [ToolbarPlugin.pluginName]: toolbarOptions,
@@ -116,7 +156,7 @@ new Engine(...,{ config: {
 列表项选中事件，返回 `false` 不会执行列表项配置的默认命令
 
 ```ts
-onSelect?: (event: React.MouseEvent, name: string) => void | boolean;
+onSelect?: (event: React.MouseEvent, name: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ### groups
@@ -215,7 +255,7 @@ items: [
 列表项单击事件，返回 `false` 将不会执行配置的默认命令
 
 ```ts
-onClick?: (event: React.MouseEvent, name: string) => void | boolean;
+onClick?: (event: React.MouseEvent, name: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ## Button
@@ -280,7 +320,7 @@ placement?:
     | 'rightBottom';
 ```
 
-### hotkey
+### Hotkey
 
 是否显示热键，或者设置热键的信息
 
@@ -319,7 +359,7 @@ command?: { name: string; args: Array<any> } | Array<any>;
 如果返回 `false` 将不会自动执行插件命令
 
 ```ts
-onClick?: (event: React.MouseEvent) => void | boolean;
+onClick?: (event: React.MouseEvent, engine?: EngineInterface) => void | boolean;
 ```
 
 ### onMouseDown
@@ -327,7 +367,7 @@ onClick?: (event: React.MouseEvent) => void | boolean;
 鼠标按下按钮事件
 
 ```ts
-onMouseDown?: (event: React.MouseEvent) => void;
+onMouseDown?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onMouseEnter
@@ -335,7 +375,7 @@ onMouseDown?: (event: React.MouseEvent) => void;
 鼠标移入按钮事件
 
 ```ts
-onMouseEnter?: (event: React.MouseEvent) => void;
+onMouseEnter?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onMouseLeave
@@ -343,7 +383,7 @@ onMouseEnter?: (event: React.MouseEvent) => void;
 鼠标移开按钮事件
 
 ```ts
-onMouseLeave?: (event: React.MouseEvent) => void;
+onMouseLeave?: (event: React.MouseEvent, engine?: EngineInterface) => void;
 ```
 
 ### onActive
@@ -394,7 +434,7 @@ items:[
 items:[{
     key: string;
     icon?: React.ReactNode;
-    content?: React.ReactNode | (() => React.ReactNode);
+    content?: React.ReactNode | ((engine?: EngineInterface) => React.ReactNode);
     hotkey?: boolean | string;
     isDefault?: boolean;
     title?: string;
@@ -475,7 +515,7 @@ direction?: 'vertical' | 'horizontal';
 列表项选中事件，返回 `false` 将不自动执行选中项配置的命令
 
 ```ts
-onSelect?: (event: React.MouseEvent, key: string) => void | boolean;
+onSelect?: (event: React.MouseEvent, key: string, engine?: EngineInterface) => void | boolean;
 ```
 
 ### hasArrow
@@ -501,7 +541,7 @@ hasDot?: boolean;
 可以返回 React 组件或者 Vue 可以返回 html 字符串
 
 ```ts
-renderContent?: (item: DropdownListItem) => React.ReactNode;
+renderContent?: (item: DropdownListItem, engine?: EngineInterface) => React.ReactNode;
 ```
 
 ### onActive

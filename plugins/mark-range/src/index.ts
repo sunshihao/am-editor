@@ -1,4 +1,4 @@
-import Engine, {
+import {
 	$,
 	CardEntry,
 	DATA_TRANSIENT_ATTRIBUTES,
@@ -47,6 +47,7 @@ export default class<
 	#isRevoke: boolean = false;
 	#isPreview: boolean = false;
 	#isApply: boolean = false;
+	#isCreateting: boolean = false;
 	#previewAwating?: (value: boolean) => void;
 
 	static get pluginName() {
@@ -68,52 +69,28 @@ export default class<
 	init() {
 		super.init();
 		const globals: Array<SchemaGlobal> = [];
-		this.options.keys.forEach((key) => {
-			globals.push(
-				{
-					type: 'block',
-					attributes: {
-						[this.getIdName(key)]: '*',
-						[this.MARK_KEY]: key,
-					},
+		const optionKeys = this.options?.keys || [];
+		optionKeys.forEach((key) => {
+			globals.push({
+				type: 'mark',
+				attributes: {
+					[this.getIdName(key)]: '*',
+					[this.MARK_KEY]: key,
 				},
-				{
-					type: 'inline',
-					attributes: {
-						[this.getIdName(key)]: '*',
-						[this.MARK_KEY]: key,
-					},
-				},
-			);
+			});
 		});
-		this.editor.schema.add(globals);
-		this.editor.on('beforeCommandExecute', (name: string) => {
-			this.executeBySelf = name === PLUGIN_NAME;
-		});
-		this.editor.on('afterCommandExecute', (name: string) => {
-			this.executeBySelf = false;
-		});
+		const editor = this.editor;
+		editor.schema.add(globals);
+		editor.on('beforeCommandExecute', this.onBeforeCommandExecute);
+		editor.on('afterCommandExecute', this.onAfterCommandExecute);
 
-		if (isEngine(this.editor)) {
-			const { change } = this.editor;
-			this.editor.on('change', (trigger) => {
-				this.triggerChange(trigger !== 'local');
-			});
-			this.editor.on('select', this.onSelectionChange);
-			this.editor.on('parse:value', (node, atts) => {
-				const key = node.attributes(this.MARK_KEY);
-				if (!!key) {
-					atts[DATA_TRANSIENT_ATTRIBUTES] = this.getPreviewName(key);
-				}
-			});
-			this.editor.on('afterSetValue', () => {
-				this.range = change.range.get();
-				this.ids = this.getIds();
-			});
-			const keys = this.options.keys.map((key) =>
-				this.getPreviewName(key),
-			);
-			this.editor.history.onFilter((op) => {
+		if (isEngine(editor)) {
+			editor.on('change', this.onChange);
+			editor.on('select', this.onSelectionChange);
+			editor.on('parse:value', this.parseValue);
+			editor.on('afterSetValue', this.onAfterSetValue);
+			const keys = optionKeys.map((key) => this.getPreviewName(key));
+			editor.history.onFilter((op) => {
 				if (
 					('od' in op || 'oi' in op) &&
 					keys.includes(op.p[op.p.length - 1].toString())
@@ -122,7 +99,7 @@ export default class<
 				}
 				return false;
 			});
-			this.editor.history.onSelf(() => {
+			editor.history.onSelf(() => {
 				if (this.#isPreview && !this.#previewAwating) {
 					return new Promise<boolean>((resolve) => {
 						this.#previewAwating = resolve;
@@ -135,29 +112,57 @@ export default class<
 				}
 				return;
 			});
-		} else if (isView(this.editor)) {
-			this.editor.container.document?.addEventListener(
+		} else if (isView(editor)) {
+			editor.container.document?.addEventListener(
 				'selectionchange',
 				this.onSelectionChange,
 			);
 		}
 	}
 
+	onBeforeCommandExecute = (name: string) => {
+		this.executeBySelf = name === PLUGIN_NAME;
+	};
+
+	onAfterCommandExecute = (name: string) => {
+		this.executeBySelf = false;
+	};
+
+	onChange = (trigger: 'local' | 'remote') => {
+		this.triggerChange(trigger !== 'local');
+	};
+
+	parseValue = (node: NodeInterface, atts: Record<string, string>) => {
+		const key = node.attributes(this.MARK_KEY);
+		if (!!key) {
+			atts[DATA_TRANSIENT_ATTRIBUTES] = this.getPreviewName(key);
+		}
+	};
+
+	onAfterSetValue = () => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		this.range = editor.change.range.get();
+		this.ids = this.getIds();
+	};
+
 	schema() {
-		const rules: Array<SchemaMark> = this.options.keys.map((key) => {
-			return {
-				name: 'span',
-				type: 'mark',
-				attributes: {
-					[this.MARK_KEY]: {
-						required: true,
-						value: key,
+		const rules: Array<SchemaMark> = (this.options?.keys || []).map(
+			(key) => {
+				return {
+					name: 'span',
+					type: 'mark',
+					attributes: {
+						[this.MARK_KEY]: {
+							required: true,
+							value: key,
+						},
+						[this.MARK_UUID]: '*',
+						[this.getIdName(key)]: '*',
 					},
-					[this.MARK_UUID]: '*',
-					[this.getIdName(key)]: '*',
-				},
-			};
-		});
+				};
+			},
+		);
 		return rules;
 	}
 	/**
@@ -167,7 +172,8 @@ export default class<
 	 * @returns
 	 */
 	getSelectInfo(range: RangeInterface, strict?: boolean) {
-		const { card } = this.editor;
+		const editor = this.editor;
+		const { card } = editor;
 		const cloneRange = range
 			.cloneRange()
 			.shrinkToElementNode()
@@ -225,13 +231,13 @@ export default class<
 				selectId = startId;
 				//严格模式，开始节点和结束节点需要在节点内的两侧
 				if (strict) {
-					const strictRange = Range.from(this.editor)?.cloneRange();
+					const strictRange = Range.from(editor)?.cloneRange();
 					strictRange?.setStart(startMark, 0);
 					strictRange?.setEnd(
 						endMark,
 						endMark.isText()
 							? endMark.text().length
-							: endMark.children().length,
+							: endMark.get<Node>()?.childNodes.length ?? 0,
 					);
 					if (
 						!strictRange
@@ -271,6 +277,7 @@ export default class<
 	 * @param id 标记id，否则预览当前光标位置
 	 */
 	preview(key: string, id?: string) {
+		const editor = this.editor;
 		if (id) {
 			const elements = this.findElements(key, id);
 			elements.forEach((markNode) => {
@@ -281,7 +288,8 @@ export default class<
 				markNode.attributes(this.getPreviewName(key), 'true');
 			});
 		} else if (this.range) {
-			const { block, node, card } = this.editor;
+			this.startMutation();
+			const { block, node, card } = editor;
 			let range = this.range;
 			//光标重合时，选择整个block块
 			if (range.collapsed) {
@@ -296,11 +304,11 @@ export default class<
 			//当前光标已存在标记
 			if (selectInfo && selectInfo.key === key) {
 				//触发选择
-				this.editor.trigger(`${PLUGIN_NAME}:select`, range, selectInfo);
+				editor.trigger(`${PLUGIN_NAME}:select`, range, selectInfo);
 				return;
 			}
 			//包裹标记预览样式
-			this.editor.mark.wrap(
+			editor.mark.wrap(
 				`<${this.tagName} ${
 					this.MARK_KEY
 				}="${key}" ${DATA_TRANSIENT_ATTRIBUTES}="${this.getPreviewName(
@@ -331,6 +339,7 @@ export default class<
 					text += subRange.getText();
 				}
 			});
+			this.#isCreateting = true;
 			this.#isPreview = true;
 			return text;
 		}
@@ -343,8 +352,9 @@ export default class<
 	 * @param id
 	 */
 	apply(key: string, id: string) {
+		const editor = this.editor;
 		//遍历预览节点
-		this.editor.container
+		editor.container
 			.find(`[${this.getPreviewName(key)}]`)
 			.each((markNode) => {
 				const mark = $(markNode);
@@ -368,9 +378,7 @@ export default class<
 							ids.indexOf(id) < 0
 						) {
 							const elements = this.findElements(key, oldId);
-							const oldRange = Range.from(
-								this.editor,
-							)?.cloneRange();
+							const oldRange = Range.from(editor)?.cloneRange();
 							if (!oldRange || elements.length === 0) continue;
 							const oldBegin = oldRange
 								.select(elements[0], true)
@@ -419,19 +427,17 @@ export default class<
 				mark.removeAttributes(this.getPreviewName(key));
 				const editableCard = mark.closest(EDITABLE_SELECTOR);
 				if (editableCard.length > 0) {
-					const cardComponent = this.editor.card.find(
-						editableCard,
-						true,
-					);
+					const cardComponent = editor.card.find(editableCard, true);
 					if (cardComponent && cardComponent.onChange)
 						cardComponent.onChange('local', cardComponent.root);
 				}
-				const cardComponent = this.editor.card.find(mark);
+				const cardComponent = editor.card.find(mark);
 				if (cardComponent && cardComponent.executeMark) {
 					cardComponent.executeMark(mark.clone(), true);
 				}
 			});
 		this.#isApply = true;
+		this.#isCreateting = false;
 	}
 	/**
 	 * 遗弃预览项
@@ -439,14 +445,16 @@ export default class<
 	 * @param id 编号，不传编号则遗弃所有预览项
 	 */
 	revoke(key: string, id?: string) {
-		const { node } = this.editor;
+		const editor = this.editor;
+		const { node } = editor;
 		let elements: Array<NodeInterface | Node> = [];
 		if (id) elements = this.findElements(key, id);
 		else
-			elements = this.editor.container
+			elements = editor.container
 				.find(`[${this.getPreviewName(key)}]`)
 				.toArray();
 		//遍历预览节点
+		const mergeMarks: NodeInterface[] = [];
 		elements.forEach((markNode) => {
 			const mark = $(markNode);
 			//获取旧id传
@@ -466,10 +474,16 @@ export default class<
 			} else {
 				//移除预览样式
 				mark.removeAttributes(this.getPreviewName(key));
+				mergeMarks.push(mark);
 			}
 		});
-		if (!id && elements.length > 0 && isEngine(this.editor)) {
+		if (!id && elements.length > 0 && isEngine(editor)) {
 			this.#isRevoke = true;
+			this.#isCreateting = false;
+			if (mergeMarks.length > 0) {
+				// 合并
+				editor.mark.mergeMarks(mergeMarks);
+			}
 		}
 	}
 	/**
@@ -478,7 +492,8 @@ export default class<
 	 * @param id 编号
 	 */
 	remove(key: string, id: string) {
-		const { node } = this.editor;
+		const editor = this.editor;
+		const { node } = editor;
 
 		const elements: Array<NodeInterface | Node> = this.findElements(
 			key,
@@ -513,7 +528,7 @@ export default class<
 				mark.attributes(this.getIdName(key), oldIds.join(','));
 			}
 			if (editableCard.length > 0) {
-				const cardComponent = this.editor.card.find(editableCard, true);
+				const cardComponent = editor.card.find(editableCard, true);
 				if (cardComponent && cardComponent.onChange)
 					cardComponent.onChange('local', cardComponent.root);
 			}
@@ -526,6 +541,22 @@ export default class<
 
 	execute() {}
 
+	startMutation() {
+		const editor = this.editor;
+		if (isEngine(editor) && editor.ot.isStopped()) {
+			editor.ot.startMutation();
+		}
+	}
+
+	stopMutation() {
+		const editor = this.editor;
+		setTimeout(() => {
+			if (isEngine(editor) && editor.readonly && !editor.ot.isStopped()) {
+				editor.ot.stopMutation();
+			}
+		}, 10);
+	}
+
 	action(key: string, action: string, ...args: any): any {
 		const id = args[0];
 		switch (action) {
@@ -535,9 +566,11 @@ export default class<
 			case 'apply':
 				if (!id) return;
 				this.apply(key, id);
+				this.stopMutation();
 				break;
 			case 'revoke':
 				this.revoke(key, id);
+				this.stopMutation();
 				break;
 			case 'find':
 				if (!id) return [];
@@ -545,6 +578,7 @@ export default class<
 			case 'remove':
 				if (!id) return;
 				this.remove(key, id);
+				this.stopMutation();
 				break;
 			case 'filter':
 				return this.filterValue(key, id);
@@ -576,31 +610,51 @@ export default class<
 	 */
 	onSelectionChange = () => {
 		if (this.executeBySelf) return;
-		const { window } = this.editor.container;
+		const editor = this.editor;
+		const { window } = editor.container;
 		const selection = window?.getSelection();
 
 		if (!selection) return;
-		const range = Range.from(this.editor, selection);
+		const range = Range.from(editor, selection);
 		if (!range) return;
 
 		//不在编辑器内
 		if (
-			!$(range.getStartOffsetNode()).inEditor() ||
-			!$(range.getEndOffsetNode()).inEditor()
+			!$(range.getStartOffsetNode()).inEditor(editor.container) ||
+			!$(range.getEndOffsetNode()).inEditor(editor.container)
 		) {
-			this.editor.trigger(`${PLUGIN_NAME}:select`, range);
+			editor.trigger(`${PLUGIN_NAME}:select`, range);
 			this.range = undefined;
 			return;
 		}
 
 		this.triggerChange();
 
+		const keys = this.options.keys;
+		for (let k = 0; k < keys.length; k++) {
+			const key = keys[k];
+			const name = this.getPreviewName(key);
+			const { startNode, endNode, commonAncestorNode } = range;
+			const parent = commonAncestorNode.parent();
+			if (
+				this.#isCreateting &&
+				(startNode.attributes(name) ||
+					endNode.attributes(name) ||
+					commonAncestorNode.attributes(name) ||
+					!range.commonAncestorNode.inEditor() ||
+					parent?.attributes(name))
+			) {
+				this.range = range;
+				return;
+			}
+		}
 		const selectInfo = this.getSelectInfo(range, true);
-		this.editor.trigger(`${PLUGIN_NAME}:select`, range, selectInfo);
+		editor.trigger(`${PLUGIN_NAME}:select`, range, selectInfo);
 		this.range = range;
 	};
 
 	triggerChange(remote: boolean = false) {
+		const editor = this.editor;
 		const addIds: { [key: string]: Array<string> } = {};
 		const removeIds: { [key: string]: Array<string> } = {};
 		const ids = this.getIds();
@@ -622,7 +676,7 @@ export default class<
 			});
 		});
 		if (remote) {
-			const currentElements = this.editor.container.find(
+			const currentElements = editor.container.find(
 				`[${this.MARK_UUID}="${this.m_uuid}"]`,
 			);
 			currentElements.each((_, index) => {
@@ -641,7 +695,7 @@ export default class<
 			});
 		}
 		this.ids = ids;
-		this.editor.trigger(`${PLUGIN_NAME}:change`, addIds, removeIds, ids);
+		editor.trigger(`${PLUGIN_NAME}:change`, addIds, removeIds, ids);
 	}
 
 	/**
@@ -656,19 +710,17 @@ export default class<
 		value: string;
 		paths: Array<{ id: Array<string>; path: Array<Path> }>;
 	} {
-		const container = this.editor.container.clone(value ? false : true);
+		const curEditor = this.editor;
+		const container = curEditor.container.clone(value ? false : true);
 		container.css({
 			position: 'fixed',
 			top: '-999px',
-			width: this.editor.container.css('width') || '100%',
+			width: curEditor.container.css('width') || '100%',
 			clip: 'rect(0, 0, 0, 0)',
 		});
 		$(document.body).append(container);
 
-		const editor: EditorInterface = new View(
-			container,
-			this.editor.options,
-		);
+		const editor: EditorInterface = new View(container, curEditor.options);
 
 		const { node, card } = editor;
 		if (value) container.html(transformCustomTags(value));
@@ -729,7 +781,7 @@ export default class<
 				}
 			},
 			false,
-			true,
+			'editable',
 		);
 		const cardNodes = container.find(CARD_SELECTOR);
 		cardNodes.each((_, index) => {
@@ -761,19 +813,17 @@ export default class<
 		paths: Array<{ id: Array<string>; path: Array<Path> }>,
 		value?: string,
 	): string {
-		const container = this.editor.container.clone(value ? false : true);
+		const curEditor = this.editor;
+		const container = curEditor.container.clone(value ? false : true);
 		if (value) value = Selection.removeTags(value);
 		container.css({
 			position: 'fixed',
 			top: '-999px',
-			width: this.editor.container.css('width') || '100%',
+			width: curEditor.container.css('width') || '100%',
 			clip: 'rect(0, 0, 0, 0)',
 		});
 		$(document.body).append(container);
-		const editor: EditorInterface = new View(
-			container,
-			this.editor.options,
-		);
+		const editor: EditorInterface = new View(container, curEditor.options);
 		const { card } = editor;
 		if (value) container.html(transformCustomTags(value));
 		card.render(container, undefined, false);
@@ -849,10 +899,20 @@ export default class<
 	}
 
 	destroy() {
-		this.editor.off('select', this.onSelectionChange);
-		this.editor.container.document?.removeEventListener(
-			'selectionchange',
-			this.onSelectionChange,
-		);
+		const editor = this.editor;
+		editor.off('beforeCommandExecute', this.onBeforeCommandExecute);
+		editor.off('afterCommandExecute', this.onAfterCommandExecute);
+
+		if (isEngine(editor)) {
+			editor.off('change', this.onChange);
+			editor.off('select', this.onSelectionChange);
+			editor.off('parse:value', this.parseValue);
+			editor.off('afterSetValue', this.onAfterSetValue);
+		} else if (isView(editor)) {
+			editor.container.document?.removeEventListener(
+				'selectionchange',
+				this.onSelectionChange,
+			);
+		}
 	}
 }

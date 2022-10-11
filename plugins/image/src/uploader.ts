@@ -16,9 +16,10 @@ import {
 	removeUnit,
 	CardType,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
+import type { RequestData, RequestHeaders } from '@aomao/engine';
 import { ImageOptions } from '.';
 import ImageComponent, { ImageValue } from './component';
-
 export interface ImageUploaderOptions extends PluginOptions {
 	/**
 	 * 文件上传配置
@@ -39,7 +40,7 @@ export interface ImageUploaderOptions extends PluginOptions {
 		/**
 		 * 额外携带数据上传
 		 */
-		data?: {};
+		data?: RequestData;
 		/**
 		 * 请求类型，默认 multipart/form-data;
 		 */
@@ -47,7 +48,7 @@ export interface ImageUploaderOptions extends PluginOptions {
 		/**
 		 * 图片接收的格式，默认 "svg","png","bmp","jpg","jpeg","gif","tif","tiff","emf","webp"
 		 */
-		accept?: string | Array<string>;
+		accept?: string | string[] | Record<string, string>;
 		/**
 		 * 是否跨域
 		 */
@@ -59,10 +60,7 @@ export interface ImageUploaderOptions extends PluginOptions {
 		/**
 		 * 请求头
 		 */
-		headers?:
-			| { [key: string]: string }
-			| (() => { [key: string]: string })
-			| (() => { [key: string]: string });
+		headers?: RequestHeaders;
 		/**
 		 * 文件选择限制数量
 		 */
@@ -84,7 +82,7 @@ export interface ImageUploaderOptions extends PluginOptions {
 		/**
 		 * 请求头
 		 */
-		headers?: { [key: string]: string } | (() => { [key: string]: string });
+		headers?: RequestHeaders;
 		/**
 		 * 上传地址
 		 */
@@ -96,7 +94,7 @@ export interface ImageUploaderOptions extends PluginOptions {
 		/**
 		 * 额外携带数据上传
 		 */
-		data?: {};
+		data?: RequestData;
 		/**
 		 * 图片地址上传时请求参数的名称，默认 url
 		 */
@@ -123,6 +121,13 @@ export interface ImageUploaderOptions extends PluginOptions {
 	isRemote?: (src: string) => boolean;
 }
 
+const DROP_FILES = 'drop:files';
+const PASTE_EVENT = 'paste:event';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
+const PASTE_AFTER = 'paste:after';
+const MARKDOWN_IT = 'markdown-it';
+
 export default class<
 	T extends ImageUploaderOptions = ImageUploaderOptions,
 > extends Plugin<T> {
@@ -133,54 +138,50 @@ export default class<
 		return 'image-uploader';
 	}
 
-	extensionNames = [
-		'svg',
-		'png',
-		'bmp',
-		'jpg',
-		'jpeg',
-		'gif',
-		'tif',
-		'tiff',
-		'emf',
-		'webp',
-	];
+	extensionNames: Record<string, string> | string[] = {
+		svg: 'image/svg+xml',
+		png: 'image/png',
+		bmp: 'image/bmp',
+		jpg: 'image/jpeg',
+		jpeg: 'image/jpeg',
+		gif: 'image/gif',
+		tif: 'image/tiff',
+		tiff: 'image/tiff',
+		emf: 'image/emf',
+		webp: 'image/webp',
+	};
 
 	init() {
+		const editor = this.editor;
 		if (isEngine(this.editor)) {
-			this.editor.on('keydown:space', (event) => this.markdown(event));
-			this.editor.on('drop:files', (files) => this.dropFiles(files));
-			this.editor.on('paste:event', ({ files }) =>
-				this.pasteFiles(files),
-			);
-			this.editor.on('paste:schema', (schema) =>
-				this.pasteSchema(schema),
-			);
-			this.editor.on('paste:each', (node) => this.pasteEach(node));
-			this.editor.on('paste:after', () => this.pasteAfter());
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
-			this.editor.on('paste:markdown', (child) =>
-				this.pasteMarkdown(child),
-			);
+			editor.on(DROP_FILES, this.dropFiles);
+			editor.on(PASTE_EVENT, this.pasteFiles);
+			editor.on(PASTE_SCHEMA, this.pasteSchema);
+			editor.on(PASTE_EACH, this.pasteEach);
+			editor.on(PASTE_AFTER, this.pasteAfter);
+			editor.on(MARKDOWN_IT, this.markdownIt);
 		}
 		let { accept } = this.options.file || {};
-		const names: Array<string> = [];
 		if (typeof accept === 'string') accept = accept.split(',');
-
-		(accept || []).forEach((name) => {
-			name = name.trim();
-			const newName = name.split('.').pop();
-			if (newName) names.push(newName);
-		});
-		if (names.length > 0) this.extensionNames = names;
+		if (Array.isArray(accept)) {
+			const names: string[] = [];
+			(accept || []).forEach((name) => {
+				name = name.trim();
+				const newName = name.split('.').pop();
+				if (newName) names.push(newName);
+			});
+			if (names.length > 0) this.extensionNames = names;
+		} else if (typeof accept === 'object') {
+			this.extensionNames = accept;
+		}
 	}
 
 	isImage(file: File) {
 		const name = getExtensionName(file);
-		return this.extensionNames.indexOf(name) >= 0;
+		const names = Array.isArray(this.extensionNames)
+			? this.extensionNames
+			: Object.keys(this.extensionNames);
+		return names.indexOf('*') >= 0 || names.indexOf(name) >= 0;
 	}
 
 	dataURIToFile(dataURI: string) {
@@ -210,7 +211,8 @@ export default class<
 		const imagePlugin = this.editor.plugin.components['image'];
 		if (imagePlugin) {
 			const { onBeforeRender } = (imagePlugin['options'] || {}) as any;
-			if (onBeforeRender) return onBeforeRender(value.status, value.src);
+			if (onBeforeRender)
+				return onBeforeRender(value.status, value.src, this.editor);
 		}
 		return value.src;
 	}
@@ -218,11 +220,11 @@ export default class<
 	loadImage(id: string, value: ImageValue) {
 		if (!this.loadCounts[id]) this.loadCounts[id] = 1;
 		const image = new Image();
-
+		const editor = this.editor;
 		image.src = this.getUrl(value);
 		image.onload = () => {
 			delete this.loadCounts[id];
-			this.editor.card.update(id, value);
+			editor.card.update(id, value);
 		};
 		image.onerror = () => {
 			if (this.loadCounts[id] <= 3) {
@@ -233,14 +235,19 @@ export default class<
 			} else {
 				delete this.loadCounts[id];
 				value.status = 'error';
-				this.editor.card.update(id, value);
+				(value.message = editor.language.get<string>(
+					'image',
+					'loadError',
+				)),
+					editor.card.update(id, value);
 			}
 		};
 	}
 
 	async execute(files?: Array<File> | string | MouseEvent) {
-		if (!isEngine(this.editor)) return;
-		const { request, card, language } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { request, card, language } = editor;
 		const {
 			action,
 			data,
@@ -254,13 +261,17 @@ export default class<
 		} = this.options.file;
 		const { parse } = this.options;
 		const limitSize = this.options.file.limitSize || 5 * 1024 * 1024;
+
 		if (!Array.isArray(files) && typeof files !== 'string') {
+			const accepts = Array.isArray(this.extensionNames)
+				? '.' + this.extensionNames.join(',.')
+				: Object.values(this.extensionNames).join(',');
 			files = await request.getFiles({
 				event: files,
 				accept: isAndroid
 					? 'image/*'
-					: this.extensionNames.length > 0
-					? '.' + this.extensionNames.join(',.')
+					: accepts.length > 0
+					? accepts
 					: '',
 				multiple,
 			});
@@ -274,13 +285,14 @@ export default class<
 				url: action,
 				crossOrigin,
 				withCredentials,
-				headers: typeof headers === 'function' ? headers() : headers,
+				headers,
 				data,
 				type,
 				contentType,
 				onBefore: (file) => {
 					if (file.size > limitSize) {
-						this.editor.messageError(
+						editor.messageError(
+							'upload-limit',
 							language
 								.get('image', 'uploadLimitError')
 								.toString()
@@ -295,7 +307,7 @@ export default class<
 				},
 				onReady: (fileInfo) => {
 					if (
-						!isEngine(this.editor) ||
+						!isEngine(editor) ||
 						!!this.cardComponents[fileInfo.uid]
 					)
 						return;
@@ -308,9 +320,7 @@ export default class<
 							: src;
 					const insertCard = (value: Partial<ImageValue>) => {
 						const imagePlugin =
-							this.editor.plugin.findPlugin<ImageOptions>(
-								'image',
-							);
+							editor.plugin.findPlugin<ImageOptions>('image');
 						const component = card.insert<
 							ImageValue,
 							ImageComponent<ImageValue>
@@ -331,12 +341,37 @@ export default class<
 					return new Promise<void>((resolve) => {
 						const image = new Image();
 						image.src = base64String;
+						const imagePlugin =
+							editor.plugin.findPlugin<ImageOptions>('image');
+
 						image.onload = () => {
+							const {
+								naturalWidth,
+								naturalHeight,
+								height,
+								width,
+							} = image;
+
+							let imageWidth: number = width;
+							let imageHeight: number = height;
+							const maxHeight: number | undefined =
+								imagePlugin?.options?.maxHeight;
+
+							if (
+								maxHeight &&
+								naturalHeight > naturalWidth &&
+								height > maxHeight
+							) {
+								imageHeight = maxHeight;
+								imageWidth =
+									naturalWidth * (maxHeight / naturalHeight);
+							}
+
 							insertCard({
 								src: '',
 								size: {
-									width: image.width,
-									height: image.height,
+									width: imageWidth,
+									height: imageHeight,
 									naturalHeight: image.naturalHeight,
 									naturalWidth: image.naturalWidth,
 								},
@@ -344,7 +379,7 @@ export default class<
 							resolve();
 						};
 						image.onerror = () => {
-							insertCard({ src: '' });
+							insertCard({ src: '', status: 'error' });
 							resolve();
 						};
 					});
@@ -372,10 +407,7 @@ export default class<
 							status: 'error',
 							message:
 								result.data ||
-								this.editor.language.get<string>(
-									'image',
-									'uploadError',
-								),
+								language.get<string>('image', 'uploadError'),
 						});
 					} else {
 						src = result.data;
@@ -396,10 +428,7 @@ export default class<
 						status: 'error',
 						message:
 							error.message ||
-							this.editor.language.get<string>(
-								'image',
-								'uploadError',
-							),
+							language.get<string>('image', 'uploadError'),
 					});
 					delete this.cardComponents[file.uid || ''];
 				},
@@ -410,15 +439,16 @@ export default class<
 		return;
 	}
 
-	dropFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	dropFiles = (files: File[]) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isImage(file));
 		if (files.length === 0) return;
-		this.editor.command.execute('image-uploader', files);
+		editor.command.execute('image-uploader', files);
 		return false;
-	}
+	};
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add({
 			type: 'inline',
 			name: 'img',
@@ -438,22 +468,25 @@ export default class<
 				},
 				alt: '*',
 				title: '*',
+				'data-type': '*',
 				'data-size': '@number',
 				'data-width': '@number',
 				'data-height': '@number',
 			},
 		});
-	}
+	};
 
-	pasteFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	pasteFiles = ({ files }: Record<'files', File[]>) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isImage(file));
 		if (files.length === 0) return;
-		this.editor.command.execute('image-uploader', files);
+		editor.command.execute('image-uploader', files);
 		return false;
-	}
+	};
 
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
+		const editor = this.editor;
 		const { isRemote } = this.options;
 		//是卡片，并且还没渲染
 		if (node.isCard() && node.attributes(READY_CARD_KEY)) {
@@ -467,7 +500,7 @@ export default class<
 			if (isRemote && isRemote(value.src)) {
 				value.status = 'uploading';
 				value.percent = 0;
-				this.editor.card.replaceNode(node, 'image', value);
+				editor.card.replaceNode(node, 'image', value);
 			} else if (value.status === 'uploading') {
 				//如果是上传状态，设置为正常状态
 				value.percent = 0;
@@ -510,10 +543,11 @@ export default class<
 				node.remove();
 				return;
 			}
-			const imagePlugin =
-				this.editor.plugin.findPlugin<ImageOptions>('image');
-			const width = node.css('width');
-			const height = node.css('height');
+			const imagePlugin = editor.plugin.findPlugin<ImageOptions>('image');
+			const attrWidth = attributes['width'];
+			const attrHeight = attributes['height'];
+			const width = attrWidth ? attrWidth : node.css('width');
+			const height = attrHeight ? attrHeight : node.css('height');
 			const dataTypeValue =
 				attributes['data-type'] || imagePlugin?.options.defaultType;
 			let type = CardType.INLINE;
@@ -521,12 +555,12 @@ export default class<
 				const parent = node.parent();
 				// 移除转换为html的时候加载的额外p标签
 				if (parent && parent.name === 'p') {
-					this.editor.node.unwrap(node);
+					editor.node.unwrap(parent);
 				}
 				type = CardType.BLOCK;
 			}
 
-			this.editor.card.replaceNode(node, 'image', {
+			editor.card.replaceNode(node, 'image', {
 				type,
 				src,
 				status:
@@ -542,34 +576,41 @@ export default class<
 			});
 			node.remove();
 		}
-	}
+	};
 
-	uploadAddress(src: string, component: ImageComponent) {
-		if (!isEngine(this.editor)) return;
+	async uploadAddress(src: string, component: ImageComponent) {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		const {
 			action,
 			type,
-			data,
 			contentType,
 			crossOrigin,
 			withCredentials,
 			headers,
 			name,
+			data,
 		} = this.options.remote;
 		const { parse } = this.options;
 		const addressName = name || 'url';
-		this.editor.request.ajax({
+		editor.request.ajax({
 			url: action,
 			method: 'POST',
 			contentType: contentType || 'application/json',
 			type: type === undefined ? 'json' : type,
 			crossOrigin,
 			withCredentials,
-			headers: typeof headers === 'function' ? headers() : headers,
-			data: {
-				...data,
-				[addressName]: src,
-			},
+			headers,
+			data:
+				typeof data === 'function'
+					? async () => {
+							const newData = await data();
+							return { ...newData, [addressName]: src };
+					  }
+					: {
+							...data,
+							[addressName]: src,
+					  },
 			success: (response) => {
 				let src =
 					response.url ||
@@ -583,14 +624,11 @@ export default class<
 					? { result: true, data: src }
 					: { result: false };
 				if (!result.result) {
-					this.editor.card.update<ImageValue>(component.id, {
+					editor.card.update<ImageValue>(component.id, {
 						status: 'error',
 						message:
 							result.data ||
-							this.editor.language.get<string>(
-								'image',
-								'uploadError',
-							),
+							editor.language.get<string>('image', 'uploadError'),
 					});
 				} else {
 					src = result.data;
@@ -605,22 +643,19 @@ export default class<
 				}
 			},
 			error: (error) => {
-				this.editor.card.update<ImageValue>(component.id, {
+				editor.card.update<ImageValue>(component.id, {
 					status: 'error',
 					message:
 						error.message ||
-						this.editor.language.get<string>(
-							'image',
-							'uploadError',
-						),
+						editor.language.get<string>('image', 'uploadError'),
 				});
 			},
 		});
 	}
 
 	insertRemote(src: string, alt?: string) {
-		const imagePlugin =
-			this.editor.plugin.findPlugin<ImageOptions>('image');
+		const editor = this.editor;
+		const imagePlugin = editor.plugin.findPlugin<ImageOptions>('image');
 		const value: ImageValue = {
 			src,
 			alt,
@@ -630,7 +665,7 @@ export default class<
 		const { isRemote } = this.options;
 		//上传第三方图片
 		if (isRemote && isRemote(src)) {
-			const component = this.editor.card.insert<
+			const component = editor.card.insert<
 				ImageValue,
 				ImageComponent<ImageValue>
 			>('image', value);
@@ -639,139 +674,60 @@ export default class<
 		}
 		//当前图片
 		value.status = 'done';
-		this.editor.card.insert('image', value);
+		editor.card.insert('image', value);
 	}
 
-	pasteAfter() {
-		this.editor.container
-			.find('[data-card-key=image]')
-			.each((node, key) => {
-				const component = this.editor.card.find(node) as ImageComponent;
-				if (!component || !isEngine(this.editor)) return;
-				const value = component.getValue();
-				//不是上传状态，或者当前卡片正在执行上传跳过
-				if (
-					value?.status !== 'uploading' ||
-					Object.keys(this.cardComponents).find(
-						(key) => this.cardComponents[key].id === component.id,
-					)
-				) {
-					return;
-				}
-
-				const { src } = value;
-				// 转存 base64 图片
-				if (/^data:image\//i.test(src)) {
-					const fileBlob = this.dataURIToFile(src);
-					const ext = getExtensionName(fileBlob);
-					const name = ext ? 'image.'.concat(ext) : 'image';
-					const file: File = new globalThis.File([fileBlob], name);
-					file.uid = new Date().getTime() + '-' + random();
-					this.editor.command.execute('image-uploader', [file]);
-					this.cardComponents[file.uid] = component;
-					return;
-				}
-				const { isRemote } = this.options;
-				if (isRemote && isRemote(src)) {
-					this.uploadAddress(src, component);
-				}
-			});
-	}
-
-	markdown(event: KeyboardEvent) {
-		if (!isEngine(this.editor) || this.options.markdown === false) return;
-		const { change, node } = this.editor;
-		const range = change.range.get();
-
-		if (!range.collapsed || change.isComposing() || !this.markdown) return;
-		const cloneRange = range.cloneRange();
-		cloneRange.shrinkToTextNode();
-		const { startNode } = cloneRange;
-		if (!startNode.isText()) return;
-		const text = startNode.text();
-		const match = /!\[([^\]]{0,})\]\((https?:\/\/[^\)]{5,})\)/.exec(text);
-		if (match) {
-			cloneRange.setStart(startNode, match.index);
-			change.range.select(cloneRange);
-			event.preventDefault();
-			const splits = match[1].split('|');
-			const src = match[2];
-			const alignment = splits[1];
-			if (alignment === 'center' || alignment === 'right') {
-				this.editor.command.execute('alignment', alignment);
+	pasteAfter = () => {
+		const editor = this.editor;
+		editor.container.find('[data-card-key=image]').each((node, key) => {
+			const component = editor.card.find(node) as ImageComponent;
+			if (!component || !isEngine(editor)) return;
+			const value = component.getValue();
+			//不是上传状态，或者当前卡片正在执行上传跳过
+			if (
+				value?.status !== 'uploading' ||
+				Object.keys(this.cardComponents).find(
+					(key) => this.cardComponents[key].id === component.id,
+				)
+			) {
+				return;
 			}
-			this.insertRemote(src, splits[0]);
+
+			const { src } = value;
+			// 转存 base64 图片
+			if (/^data:image\//i.test(src)) {
+				const fileBlob = this.dataURIToFile(src);
+				const ext = getExtensionName(fileBlob);
+				const name = ext ? 'image.'.concat(ext) : 'image';
+				const file: File = new globalThis.File([fileBlob], name);
+				file.uid = new Date().getTime() + '-' + random();
+				editor.command.execute('image-uploader', [file]);
+				this.cardComponents[file.uid] = component;
+				return;
+			}
+			const { isRemote } = this.options;
+			if (isRemote && isRemote(src)) {
+				this.uploadAddress(src, component);
+			}
+		});
+	};
+
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('image');
+			mardown.enable('reference');
 		}
-	}
+	};
 
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		if (!text) return;
-		// 带跳转链接的图片
-		let reg =
-			/(\[!\[([^\]]{0,})\]\((\S{0,})(https?:\/\/[^\)]{5,})\)\]\(([\S]+?)\))|(!\[([^\]]{0,})\]\((https?:\/\/[^\)]{5,})\))/i;
-		let match = reg.exec(text);
-
-		if (!match) {
-			// 无跳转链接的图片
-			//![aomao-preview](https://user-images.githubusercontent.com/55792257/125074830-62d79300-e0f0-11eb-8d0f-bb96a7775568.png)
-			reg = /(!\[([^\]]{0,})\]\((\S{0,})(https?:\/\/[^\)]{5,})\))/i;
-			match = reg.exec(text);
+	destroy() {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off(DROP_FILES, this.dropFiles);
+			editor.off(PASTE_EVENT, this.pasteFiles);
+			editor.off(PASTE_SCHEMA, this.pasteSchema);
+			editor.off(PASTE_EACH, this.pasteEach);
+			editor.off(PASTE_AFTER, this.pasteAfter);
+			editor.off(MARKDOWN_IT, this.markdownIt);
 		}
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-
-		const { isRemote } = this.options;
-		let { reg, match } = result;
-		if (!match) return;
-		let newText = '';
-		let textNode = node.clone(true).get<Text>()!;
-		const { card } = this.editor;
-		while (
-			textNode.textContent &&
-			(match = reg.exec(textNode.textContent))
-		) {
-			//从匹配到的位置切断
-			let regNode = textNode.splitText(match.index);
-			newText += textNode.textContent;
-			//从匹配结束位置分割
-			textNode = regNode.splitText(match[0].length);
-			const isLink = match[0].startsWith('[');
-			const alt = match[2] || match[6];
-			const src = match[4] || match[8];
-			const link = isLink ? match[5] : '';
-			const imagePlugin =
-				this.editor.plugin.findPlugin<ImageOptions>('image');
-			const cardNode = card.replaceNode<ImageValue>($(regNode), 'image', {
-				src,
-				status:
-					(isRemote && isRemote(src)) || /^data:image\//i.test(src)
-						? 'uploading'
-						: 'done',
-				alt,
-				percent: 0,
-				link: !!link
-					? {
-							href: link,
-							target: isRemote && isRemote(link) ? '_blank' : '',
-					  }
-					: undefined,
-				type: imagePlugin?.options.defaultType || CardType.INLINE,
-			});
-			regNode.remove();
-
-			newText += cardNode.get<Element>()?.outerHTML;
-		}
-		newText += textNode.textContent;
-		node.text(newText);
 	}
 }

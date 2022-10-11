@@ -228,5 +228,14 @@ export default {
 		searchEmtpy: {
 			title: '无匹配卡片',
 		},
+		lightblock: {
+			title: '高亮块',
+		},
+		mulitCodeblock: {
+			title: '多功能代码块',
+		},
+		tag: {
+			title: '标签',
+		},
 	},
 };

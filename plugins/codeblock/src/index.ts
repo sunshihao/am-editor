@@ -2,7 +2,6 @@ import {
 	$,
 	Plugin,
 	isEngine,
-	PluginEntry,
 	NodeInterface,
 	CARD_KEY,
 	CARD_VALUE_KEY,
@@ -10,37 +9,24 @@ import {
 	SchemaInterface,
 	unescape,
 	CARD_TYPE_KEY,
-	PluginOptions,
 	READY_CARD_KEY,
 	decodeCardValue,
+	VIEW_CLASS_NAME,
+	SchemaBlock,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import CodeBlockComponent, {
 	CodeBlockEditor,
 	CodeBlockValue,
 } from './component';
 import locales from './locales';
+import { CodeBlockOptions } from './types';
 
-export interface CodeBlockOptions extends PluginOptions {
-	hotkey?: string | Array<string>;
-	markdown?: boolean;
-	alias?: Record<string, string>;
-}
-
-// 缩写替换
-const MODE_ALIAS = {
-	text: 'plain',
-	sh: 'bash',
-	ts: 'typescript',
-	js: 'javascript',
-	py: 'python',
-	puml: 'plantuml',
-	uml: 'plantuml',
-	vb: 'basic',
-	md: 'markdown',
-	'c++': 'cpp',
-	'c#': 'csharp',
-};
-
+const DATA_SYNTAX = 'data-syntax';
+const PARSE_HTML = 'parse:html';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
+const MARKDOWN_IT = 'markdown-it';
 export default class<
 	T extends CodeBlockOptions = CodeBlockOptions,
 > extends Plugin<T> {
@@ -49,25 +35,24 @@ export default class<
 	}
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:schema', (schema) => this.pasteSchema(schema));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
-		if (isEngine(this.editor) && this.markdown) {
-			this.editor.on('keydown:enter', (event) => this.markdown(event));
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
-			this.editor.on('paste:markdown-before', (child) =>
-				this.pasteMarkdown(child),
-			);
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
+		editor.on(PASTE_EACH, this.pasteHtml);
+		if (isEngine(editor)) {
+			editor.on(MARKDOWN_IT, this.markdownIt);
 		}
 	}
 
 	execute(mode: string, value: string) {
-		if (!isEngine(this.editor)) return;
-		const { card } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { card } = editor;
+		if (!value) {
+			const data = editor.getSelectionData();
+			if (data) value = data.text;
+		}
 		const component = card.insert<
 			CodeBlockValue,
 			CodeBlockComponent<CodeBlockValue>
@@ -84,63 +69,34 @@ export default class<
 		return this.options.hotkey || '';
 	}
 
-	markdown(event: KeyboardEvent) {
-		if (!isEngine(this.editor) || this.options.markdown === false) return;
-		const { change, node, command } = this.editor;
-		const blockApi = this.editor.block;
-		const range = change.range.get();
-
-		if (!range.collapsed || change.isComposing() || !this.markdown) return;
-
-		const block = blockApi.closest(range.startNode);
-
-		if (!node.isRootBlock(block)) {
-			return;
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('code');
+			mardown.enable('fence');
 		}
+	};
 
-		const chars = blockApi.getLeftText(block);
-		const match = /^`{3,}(.*){0,20}$/.exec(chars);
-
-		if (match) {
-			const modeText = (undefined === match[1] ? '' : match[1])
-				.trim()
-				.toLowerCase();
-			const alias = { ...(this.options.alias || {}), ...MODE_ALIAS };
-			const mode = alias[modeText] || modeText;
-
-			if (mode || mode === '') {
-				event.preventDefault();
-				blockApi.removeLeftText(block);
-				command.execute(
-					(this.constructor as PluginEntry).pluginName,
-					mode,
-				);
-				block.remove();
-				return false;
-			}
-		}
-		return;
-	}
-
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add([
 			{
 				type: 'block',
 				name: 'pre',
 				attributes: {
-					'data-syntax': '*',
+					[DATA_SYNTAX]: '*',
 					class: '*',
 					language: '*',
+					'auto-wrap': '*',
 				},
 			},
 			{
 				type: 'block',
 				name: 'code',
 				attributes: {
-					'data-syntax': {
+					[DATA_SYNTAX]: {
 						required: true,
 						value: '*',
 					},
+					'auto-wrap': '*',
 				},
 			},
 			{
@@ -159,30 +115,35 @@ export default class<
 				attributes: {
 					class: {
 						required: true,
-						value: '*',
+						value: (val) => {
+							return val.includes('language');
+						},
 					},
 				},
-			},
+				allowIn: ['pre', '$root'],
+			} as SchemaBlock,
 			{
 				type: 'block',
 				name: 'div',
 				attributes: {
-					'data-syntax': {
+					[DATA_SYNTAX]: {
 						required: true,
 						value: '*',
 					},
+					'auto-wrap': '*',
 				},
 			},
 		]);
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor) || node.isText()) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor) || node.isText()) return;
 		if (
-			node.get<HTMLElement>()?.hasAttribute('data-syntax') ||
+			node.get<HTMLElement>()?.hasAttribute(DATA_SYNTAX) ||
 			node.name === 'pre'
 		) {
-			let syntax: string | undefined = node.attributes('data-syntax');
+			let syntax: string | undefined = node.attributes(DATA_SYNTAX);
 			if (!syntax) {
 				const getSyntaxForClass = (node: NodeInterface) => {
 					const classList = node?.get<HTMLElement>()?.classList;
@@ -206,133 +167,63 @@ export default class<
 				const code = node.find('code');
 				if (!syntax && code.length > 0) {
 					syntax =
-						code.attributes('data-syntax') ||
+						code.attributes(DATA_SYNTAX) ||
 						code.attributes('language');
 					if (!syntax) {
 						syntax = getSyntaxForClass(code);
 					}
 				}
 			}
-			let code = new Parser(node, this.editor).toText(
+			let code = new Parser(node, editor).toText(
 				undefined,
 				undefined,
 				false,
 			);
 			code = unescape(code.replace(/\u200b/g, ''));
-			this.editor.card.replaceNode<CodeBlockValue>(node, 'codeblock', {
+			if (code.endsWith('\n')) {
+				code = code.slice(0, -1);
+			}
+			editor.card.replaceNode<CodeBlockValue>(node, 'codeblock', {
 				mode: syntax || 'plain',
 				code,
+				autoWrap: node.attributes('auto-wrap') === 'true',
 			});
 			node.remove();
 			return false;
 		}
 		return true;
-	}
+	};
 
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-		const text = node.text();
-		if (!text) return;
-		const reg = /`{3,}/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		let { match } = result;
-		if (!match) return;
-		const { card } = this.editor;
-
-		let newText = '';
-		const nameMaps = {};
-		CodeBlockComponent.getModes().forEach((item) => {
-			nameMaps[item.value] = item.name;
-		});
-		const langs = Object.keys(nameMaps)
-			.concat(Object.keys(MODE_ALIAS))
-			.concat(Object.keys(this.options.alias || {}))
-			.sort((a, b) => (a.length > b.length ? -1 : 1));
-
-		const createCodeblock = (
-			nodes: Array<string>,
-			mode: string = 'text',
-		) => {
-			//获取中间字符
-			const codeText = nodes.join('\n');
-			let code = unescape(codeText);
-
-			if (code.endsWith('\n')) code = code.substr(0, code.length - 2);
-			const tempNode = $('<div></div>');
-			const carNode = card.replaceNode<CodeBlockValue>(
-				tempNode,
-				'codeblock',
-				{
-					mode,
-					code,
-				},
-			);
-			tempNode.remove();
-
-			return carNode.get<Element>()?.outerHTML;
-		};
-
-		const rows = node.text().split(/\n|\r\n/);
-		let nodes: Array<string> = [];
-		let isCode: boolean = false;
-		let mode = 'text';
-		rows.forEach((row) => {
-			let match = /^(.*)`{3,}(\s)*$/.exec(row);
-			if (match && isCode) {
-				nodes.push(match[1]);
-				newText += createCodeblock(nodes, mode) + '\n';
-				mode = 'text';
-				isCode = false;
-				nodes = [];
-				return;
-			}
-			match = /^`{3,}(.*)/.exec(row);
-			if (match) {
-				isCode = true;
-				mode =
-					langs.find(
-						(key) =>
-							match &&
-							(match[1] || '')
-								.trim()
-								.toLowerCase()
-								.indexOf(key) === 0,
-					) || 'text';
-				const alias = { ...(this.options.alias || {}), ...MODE_ALIAS };
-				mode = alias[mode] || mode;
-			} else if (isCode) {
-				nodes.push(row);
-			} else {
-				newText += row + '\n';
-			}
-		});
-		if (nodes.length > 0) {
-			newText += createCodeblock(nodes, mode) + '\n';
-		}
-		node.text(newText);
-	}
-
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (
 			node: NodeInterface,
 			value: CodeBlockValue,
 		) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
+		const synatxMap = {};
+		CodeBlockComponent.getModes().forEach((item) => {
+			synatxMap[item.value] = item.syntax;
+		});
+		const editor = this.editor;
+		const codeEditor = new CodeBlockEditor(editor, {
+			synatxMap,
+			styleMap: this.options.styleMap,
+		});
+		const contentClassName = 'data-codeblock-content';
+		const content = codeEditor.container.find(`.${contentClassName}`);
+		content.css({
+			border: '1px solid #e8e8e8',
+			padding: '8px',
+		});
+		content.addClass(VIEW_CLASS_NAME);
+		content.css('background', '#f9f9f9');
 		root.find(
 			`[${CARD_KEY}="${CodeBlockComponent.cardName}"],[${READY_CARD_KEY}="${CodeBlockComponent.cardName}"]`,
 		).each((cardNode) => {
 			const node = $(cardNode);
-			const card = this.editor.card.find(
+			const card = editor.card.find(
 				node,
 			) as CodeBlockComponent<CodeBlockValue>;
 			const value =
@@ -340,53 +231,38 @@ export default class<
 				decodeCardValue(node.attributes(CARD_VALUE_KEY));
 			if (value) {
 				node.empty();
-				const synatxMap = {};
-				CodeBlockComponent.getModes().forEach((item) => {
-					synatxMap[item.value] = item.syntax;
-				});
-				const codeEditor = new CodeBlockEditor(this.editor, {
-					synatxMap,
-				});
-
-				const content = codeEditor.container.find(
-					'.data-codeblock-content',
-				);
-				content.css({
-					border: '1px solid #e8e8e8',
-					'max-width': '750px',
-				});
+				content.empty();
 				codeEditor.render(value.mode || 'plain', value.code || '');
-				content.addClass('am-engine-view');
-				content.hide();
-				document.body.appendChild(content[0]);
-				content.traverse((node) => {
-					if (
-						node.type === Node.ELEMENT_NODE &&
-						(node.get<HTMLElement>()?.classList?.length || 0) > 0
-					) {
-						const element = node.get<HTMLElement>()!;
-						const style = window.getComputedStyle(element);
-						['color', 'margin', 'padding', 'background'].forEach(
-							(attr) => {
-								element.style[attr] =
-									style.getPropertyValue(attr);
-							},
-						);
-					}
-				});
-				content.show();
-				content.css('background', '#f9f9f9');
-				node.append(content);
+				const newContent = content.clone(true);
+				node.append(newContent);
 				node.removeAttributes(CARD_KEY);
 				node.removeAttributes(CARD_TYPE_KEY);
 				node.removeAttributes(CARD_VALUE_KEY);
-				node.attributes('data-syntax', value.mode || 'plain');
-				content.removeClass('am-engine-view');
+				node.attributes(DATA_SYNTAX, value.mode || 'plain');
+				node.attributes('auto-wrap', value.autoWrap ? 'true' : 'false');
+				newContent
+					.removeClass(VIEW_CLASS_NAME)
+					.removeClass(contentClassName);
+				let newNode = node;
 				if (callback) {
-					node.replaceWith(callback(node, value));
+					newNode = callback(node, value);
+					node.replaceWith(newNode);
 				}
+				results.push(newNode);
 			} else node.remove();
 		});
+		codeEditor.destroy();
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		if (isEngine(editor)) {
+			editor.off(MARKDOWN_IT, this.markdownIt);
+		}
 	}
 }
 export { CodeBlockComponent };

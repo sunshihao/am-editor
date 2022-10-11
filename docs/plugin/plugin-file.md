@@ -17,14 +17,26 @@ import File, {FileComponent, FileUploader} from'@aomao/plugin-file';
 new Engine(...,{ plugins:[ File, FileUploader], cards:[ FileComponent ]})
 ```
 
-`FileUploader` plug-in main functions: select files, upload files
+`FileUploader` plugin main functions: select files, upload files
 
 ## `File` optional
 
 `onBeforeRender` can modify the address when previewing nearby or downloading attachments
 
 ```ts
-onBeforeRender?: (action:'download' |'preview', url: string) => string;
+onBeforeRender?: (action:'download' |'preview', url: string, editor: EditorInterface) => string;
+```
+
+`onDownload` Triggered when the download attachment is clicked, by default the address link is used to jump
+
+```ts
+onDownload?: (url: string, value: FileValue) => void;
+```
+
+`onPreview` Triggered when the preview attachment is clicked, the default URL link is used to jump
+
+```ts
+onPreview?: (url: string, value: FileValue) => void;
 ```
 
 ## `FileUploader` optional
@@ -90,7 +102,7 @@ name?: string
 /**
  * Additional data upload
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * Request type, default multipart/form-data;
  */
@@ -131,7 +143,7 @@ parse?: (response: any) => {
           preview?: string;
           download?: string;
           status?: string;
-      } | string;
+      };
 };
 ```
 

@@ -1,16 +1,16 @@
 import {
 	$,
 	isEngine,
-	NodeInterface,
 	getHashId,
 	Tooltip,
 	BlockPlugin,
-	PluginEntry,
 	PluginOptions,
 	DATA_ID,
 	DATA_ELEMENT,
 	UI,
+	NodeInterface,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import Outline from './outline';
 import type { OutlineData } from './outline';
 import './index.css';
@@ -49,102 +49,87 @@ export default class<
 
 	disableMark = this.options.disableMark || ['fontsize', 'bold'];
 
+	closureRef: Record<'current', Record<'block', NodeInterface | null>> = {
+		current: { block: null },
+	};
+
 	static get pluginName() {
 		return 'heading';
 	}
 
 	init() {
 		super.init();
-		const { language } = this.editor;
-		//阅读模式处理
-		if (!isEngine(this.editor) && this.options.showAnchor !== false) {
-			this.editor.on('render', (root: Node) => {
-				const container = $(root);
-				if (this.tagName.length === 0) return;
-				container.find(this.tagName.join(',')).each((heading) => {
-					const node = $(heading);
-					const id = node.attributes('id');
-					if (id) {
-						node.find('.data-anchor-button').remove();
-						Tooltip.hide();
-						const button = $(
-							`<a class="data-anchor-button" ${DATA_ELEMENT}="${UI}"><span class="data-icon data-icon-${node.name}"></span></a>`,
-						);
-						if (node.height() !== 24) {
-							button.css({
-								top: (node.height() - 24) / 2 + 'px',
-							});
-						}
-						button.on('mouseenter', () => {
-							Tooltip.show(
-								button,
-								language.get('copyAnchor', 'title').toString(),
-							);
-						});
-						button.on('mouseleave', () => {
-							Tooltip.hide();
-						});
+		const editor = this.editor;
 
-						button.on('click', (e) => {
-							e.preventDefault();
-							e.stopPropagation();
-							const url = this.options.anchorCopy
-								? this.options.anchorCopy(id)
-								: window.location.href + '/' + id;
-
-							if (this.editor.clipboard.copy(url)) {
-								this.editor.messageSuccess(
-									language.get('copy', 'success').toString(),
-								);
-							} else {
-								this.editor.messageError(
-									language.get('copy', 'error').toString(),
-								);
-							}
-						});
-						node.prepend(button);
-					}
-				});
-			});
+		if (isEngine(editor)) {
+			editor.on('keydown:backspace', this.onBackspace);
+			editor.on('markdown-it', this.markdownIt);
+			editor.on('setValue', this.updateId);
+			editor.on('realtimeChange', this.realtimeChange);
+			editor.on('select', this.showAnchor);
+			editor.on('blur', this.showAnchor);
+			window.addEventListener('resize', this.updateAnchorPosition);
+		} else {
+			//阅读模式处理
+			if (this.options.showAnchor === false) return;
+			editor.on('render', this.onRender);
 		}
-		if (isEngine(this.editor)) {
-			this.editor.on('keydown:backspace', (event) =>
-				this.onBackspace(event),
-			);
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
-			this.editor.on('paste:markdown', (child) =>
-				this.pasteMarkdown(child),
-			);
-		}
-		//引擎处理
-		if (!isEngine(this.editor) || this.options.showAnchor === false) return;
-
-		this.editor.on('setValue', () => {
-			this.updateId();
-		});
-		this.editor.on('realtimeChange', () => {
-			this.updateId();
-			this.showAnchor();
-		});
-		this.editor.on('select', () => {
-			this.showAnchor();
-		});
-		this.editor.on('blur', () => {
-			this.showAnchor();
-		});
-		window.addEventListener(
-			'resize',
-			() => {
-				this.updateAnchorPosition();
-			},
-			false,
-		);
 	}
 
-	updateId() {
+	onRender = (root: Node) => {
+		const editor = this.editor;
+		const { language } = editor;
+		const container = $(root);
+		if (this.tagName.length === 0) return;
+		container.find(this.tagName.join(',')).each((heading) => {
+			const node = $(heading);
+			const id = node.attributes('id');
+			if (id) {
+				node.find('.data-anchor-button').remove();
+				Tooltip.hide();
+				const button = $(
+					`<a class="data-anchor-button" ${DATA_ELEMENT}="${UI}"><span class="data-icon data-icon-${node.name}"></span></a>`,
+				);
+				if (node.height() !== 24) {
+					button.css({
+						top: (node.height() - 24) / 2 + 'px',
+					});
+				}
+				button.on('mouseenter', () => {
+					Tooltip.show(
+						button,
+						language.get('copyAnchor', 'title').toString(),
+					);
+				});
+				button.on('mouseleave', () => {
+					Tooltip.hide();
+				});
+
+				button.on('click', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					const url = this.options.anchorCopy
+						? this.options.anchorCopy(id)
+						: window.location.href + '/' + id;
+
+					if (editor.clipboard.copy(url)) {
+						editor.messageSuccess(
+							'copy',
+							language.get('copy', 'success').toString(),
+						);
+					} else {
+						editor.messageError(
+							'copy',
+							language.get('copy', 'error').toString(),
+						);
+					}
+				});
+				node.prepend(button);
+			}
+		});
+	};
+
+	updateId = () => {
 		if (this.tagName.length === 0) return;
 		this.editor.container.find(this.tagName.join(',')).each((titleNode) => {
 			const node = $(titleNode);
@@ -160,11 +145,17 @@ export default class<
 				node.attributes('id', id);
 			}
 		});
-	}
+	};
 
-	updateAnchorPosition() {
-		if (!isEngine(this.editor)) return;
-		const { change, root } = this.editor;
+	realtimeChange = () => {
+		this.updateId();
+		this.showAnchor();
+	};
+
+	updateAnchorPosition = () => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, root } = editor;
 		const button = root.find('.data-anchor-button');
 
 		if (button.length === 0) {
@@ -196,20 +187,27 @@ export default class<
 			top: `${top}px`,
 			left: `${left}px`,
 		});
-	}
+	};
 
-	showAnchor() {
-		if (!isEngine(this.editor) || this.tagName.length === 0) return;
-		const { change, root, clipboard, language, card } = this.editor;
+	showAnchor = () => {
+		const editor = this.editor;
+		if (
+			!isEngine(editor) ||
+			this.tagName.length === 0 ||
+			this.options.showAnchor === false
+		)
+			return;
+		const { change, root, clipboard, language, card } = editor;
 		const range = change.range.get();
 		let button = root.find('.data-anchor-button');
 		const block = range.startNode.closest(this.tagName.join(','));
+		this.closureRef.current.block = block;
 
 		if (
 			block.length === 0 ||
 			(button.length > 0 &&
 				button.find('.data-icon-'.concat(block.name)).length === 0) ||
-			!this.editor.isFocus()
+			!editor.isFocus()
 		) {
 			button.remove();
 			Tooltip.hide();
@@ -218,7 +216,7 @@ export default class<
 		if (
 			block.length === 0 ||
 			card.closest(block, true) ||
-			!this.editor.isFocus()
+			!editor.isFocus()
 		) {
 			return;
 		}
@@ -271,38 +269,43 @@ export default class<
 		button.on('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-			const id = block.attributes('id');
+			if (!this.closureRef.current.block) return;
+			const id = this.closureRef.current.block.attributes('id');
 			const url = this.options.anchorCopy
 				? this.options.anchorCopy(id)
 				: window.location.href + '/' + id;
 
 			if (clipboard.copy(url)) {
-				this.editor!.messageSuccess(
+				editor!.messageSuccess(
+					'copy',
 					language.get('copy', 'success').toString(),
 				);
 			} else {
-				this.editor!.messageError(
+				editor!.messageError(
+					'copy',
 					language.get('copy', 'error').toString(),
 				);
 			}
 		});
-	}
+	};
 
 	execute(type: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p') {
-		if (!isEngine(this.editor)) return;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (!type || type === this.queryState()) type = 'p';
 		const { enableTypes } = this.options;
 		// 未启用
 		if (type !== 'p' && enableTypes && enableTypes.indexOf(type) < 0)
 			return;
-		const { list, block } = this.editor;
+		const { list, block } = editor;
 		list.split();
 		block.setBlocks(`<${type} />`);
 	}
 
 	queryState() {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		const blocks = change.blocks;
 		if (blocks.length === 0) {
 			return '';
@@ -331,101 +334,17 @@ export default class<
 		].filter((item) => !enableTypes || enableTypes.indexOf(item.key) > -1);
 	}
 
-	//设置markdown
-	markdown(event: KeyboardEvent, text: string, block: NodeInterface) {
-		if (!isEngine(this.editor) || this.options.markdown === false)
-			return false;
-		let type: any = '';
-		switch (text) {
-			case '#':
-				type = 'h1';
-				break;
-			case '##':
-				type = 'h2';
-				break;
-			case '###':
-				type = 'h3';
-				break;
-			case '####':
-				type = 'h4';
-				break;
-			case '#####':
-				type = 'h5';
-				break;
-			case '######':
-				type = 'h6';
-				break;
-		}
-		if (!type) return true;
-		const { enableTypes } = this.options;
-		// 未启用
-		if (enableTypes && enableTypes.indexOf(type) < 0) return true;
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) mardown.enable('heading');
+	};
 
-		event.preventDefault();
-		this.editor.block.removeLeftText(block);
-		if (this.editor.node.isEmpty(block)) {
-			block.empty();
-			block.append('<br />');
-		}
-		this.editor.command.execute(
-			(this.constructor as PluginEntry).pluginName,
-			type,
-		);
-		return false;
-	}
-
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		const reg = /(^|\r\n|\n)(#{1,6})(.*)/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		let { reg, match } = result;
-		if (!match) return;
-
-		let newText = '';
-		let textNode = node.clone(true).get<Text>()!;
-
-		const { enableTypes } = this.options;
-
-		while (
-			textNode.textContent &&
-			(match = reg.exec(textNode.textContent))
-		) {
-			const codeLength = match[2].length;
-			//从匹配到的位置切断
-			let regNode = textNode.splitText(match.index);
-			newText += textNode.textContent;
-			//从匹配结束位置分割
-			textNode = regNode.splitText(match[0].length);
-			// 过滤不支持的节点
-			if (enableTypes && enableTypes.indexOf(`h${codeLength}`) < 0) {
-				newText += match[2] + match[3];
-			} else
-				newText +=
-					match[1] +
-					`<h${codeLength}>${match[3].trim()}</h${codeLength}>\n`;
-		}
-		newText += textNode.textContent;
-
-		node.text(newText);
-	}
-
-	onBackspace(event: KeyboardEvent) {
-		if (!isEngine(this.editor)) return;
-		const { change, node } = this.editor;
+	onBackspace = (event: KeyboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node } = editor;
 		const range = change.range.get();
 		if (!range.collapsed) return;
-		const blockApi = this.editor.block;
+		const blockApi = editor.block;
 		if (!blockApi.isFirstOffset(range, 'start')) return;
 		const block = blockApi.closest(range.startNode);
 
@@ -448,6 +367,21 @@ export default class<
 			return false;
 		}
 		return;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off('keydown:backspace', this.onBackspace);
+			editor.off('markdown-it', this.markdownIt);
+			editor.off('setValue', this.updateId);
+			editor.off('realtimeChange', this.realtimeChange);
+			editor.off('select', this.showAnchor);
+			editor.off('blur', this.showAnchor);
+			window.removeEventListener('resize', this.updateAnchorPosition);
+		} else {
+			editor.off('render', this.onRender);
+		}
 	}
 }
 

@@ -47,13 +47,46 @@ engine.on('paste:schema', (schema) => {
 
 ## 导入/导出
 
-使用 engine 实例提供的 `getHtml` 和 `setHtml` 两个方法，以 `html` 为中介进行转换
+使用 `engine` 实例提供的 `getHtml` 和 `setHtml` 两个方法，以 `html` 为中介进行转换
 
 可以使用第三方库或者后端 api 读取其它文档并转换为`html`标准格式后传回前端，调用 `setHtml` 设置到编辑器中
 
 转化为其它文档格式同理，使用 `getHtml` 获取到 `html` 后进行转换
 
 有些卡片可能需要额外的属性才能使 `html` 正确的还原，可以查看具体卡片插件中的 `pasteHtml` 方法中有哪些转换条件
+
+## 导出 Markdown
+
+使用 `engine` 实例提供的 `getHtml` 方法获取到 html，然后使用 [turndown](https://github.com/mixmark-io/turndown) 这个库进行转换
+
+## 禁用/自定义 Markdown
+
+所有的`markdown`语法均使用 [markdown-it](https://github.com/markdown-it/markdown-it) 处理转换。
+
+可以通过监听 markdown-it 和 markdown-it-token 的事件，来自定义 markdown 转换
+
+```ts
+engine.on('markdown-it', (markdown) => {
+	// 使用 markdown-it api 启用插件
+	markdown.enable('markdown-it 插件名称');
+	// 使用 markdown-it api 禁用插件
+	markdown.disable('markdown-it 插件名称');
+	// 或者 新增插件
+	markdown.use(markdown - it插件);
+});
+// 默认会使用markdown-ti设置好的插件进行转换，如果有额外需求可以监听这个事件拦截，并自行调用 callback 返回字符串。如果有更复制的需求，建议使用 markdown-it 的api制作插件。
+engine.on('markdown-it-token', ({ token, markdown, callback }) => {
+	// token 为当前处理的 token
+	// markdown 为当前markdown-it实例
+	// callback 为当前处理的回调
+	if (token.type === 'paragraph_open') {
+		callback('<p>');
+		// 必须返回 flase
+		return false;
+	}
+	return true;
+});
+```
 
 ## icon 丢失
 
@@ -71,3 +104,20 @@ icon 图标是直接通过 [iconfont](https://at.alicdn.com/t/project/1456030/0c
 ```
 
 如果出现不能访问的情况，我们可以把这三个文件下载下来，然后在 css 中重新定义 @font-face 并引入新的字体文件
+
+## 如何定制卡片工具栏
+
+在卡片组件的插件配置项中，配置 `cardToolbars` 选项
+
+```ts
+new Engine(container, {
+	config: {
+		codeblock: {
+			cardToolbars: (items, editor) => {
+				console.log(items);
+				return items.filter((item) => item.key === 'copy');
+			},
+		},
+	},
+});
+```

@@ -1,7 +1,9 @@
+> In the past two years, the `am-editor` editor has done a lot of functions and extensions based on the `contenteditable` attribute, but also encountered many problems. Of course, some problems are doomed from the very beginning of the architectural design. So, be bold now and try to abandon the `contenteditable` attribute and use the self-drawn cursor mode to develop the next version of the [rich text editor](https://github.com/editablejs/editable).
+
 # am-editor
 
 <p align="center">
-	A rich text editor that supports collaborative editing, you can freely use React, Vue and other front-end common libraries to extend and define plug-ins.
+	A rich text editor that supports collaborative editing, you can freely use React, Vue and other front-end common libraries to extend and define plugins.
 </p>
 
 <p align="center">
@@ -39,10 +41,10 @@
 ## Features
 
 -   🍉 **Out of the box** - Dozens of ready to use plug to meet most needs
--   🍋 **Extensibility** - In addition to the basic plug-in of `mark`, inline`and`block`type`, we also provide`card`component combined with`React`, `Vue` and other front-end libraries to render the plug-in UI
+-   🍋 **Extensibility** - In addition to the basic plugin of `mark`, inline`and`block`type`, we also provide`card`component combined with`React`, `Vue` and other front-end libraries to render the plugin UI
 -   🍎 **Markdown Support**
 -   👨‍🦳 **I18n**
--   🔥 **Zero dependency** - The engine is written by pure **JavaScript** and does not rely on any front-end libraries. Plug-ins can be developed by any libraries such as `React` 、 `Vue` or `Svelte`
+-   🔥 **Zero dependency** - The engine is written by pure **JavaScript** and does not rely on any front-end libraries. Plugins can be developed by any libraries such as `React` 、 `Vue` or `Svelte`
 -   🦔 **Collaboration** - Ready to use with lightweight configuration
 -   Compatible with most of the latest mobile browsers
 -   🦾 **TypeScript** - Of course
@@ -51,7 +53,7 @@
 
 [**`Vue2`**](https://github.com/zb201307/am-editor-vue2)
 
-[**`Vue3`**](https://github.com/red-axe/am-editor-vue)
+[**`Vue3`**](https://github.com/red-axe/am-editor-vue3-demo)
 
 [**`React`** ](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
@@ -210,7 +212,7 @@ export default EngineDemo;
 
 ### Plugins
 
-Import `@aomao/plugin-bold` bold plug-in
+Import `@aomao/plugin-bold` bold plugin
 
 ```tsx
 import Bold from '@aomao/plugin-bold';
@@ -245,13 +247,13 @@ const engine = new Engine(ref.current, {
 });
 ```
 
-The `CodeBlock` plugin supports `markdown` by default. Enter the code block syntax ````javascript` at the beginning of a line in the editor to trigger it after pressing Enter.
+The `CodeBlock` plugin supports `markdown` by default. Enter the code block syntax ````javascript` at the beginning of a line in the editor to trigger it after pressing Space.
 
 ### Toolbar
 
 Import the `@aomao/toolbar` toolbar. Due to the complex interaction, the toolbar is basically rendered using `React` + `Antd` UI components, while `Vue3` uses `@aomao/toolbar-vue`
 
-Except for UI interaction, most of the work of the toolbar is just to call the engine to execute the corresponding plug-in commands after different button events are triggered. In the case of complicated requirements or the need to re-customize the UI, it is easier to modify after the fork.
+Except for UI interaction, most of the work of the toolbar is just to call the engine to execute the corresponding plugin commands after different button events are triggered. In the case of complicated requirements or the need to re-customize the UI, it is easier to modify after the fork.
 
 ```tsx
 import Toolbar, { ToolbarPlugin, ToolbarComponent } from '@aomao/toolbar';
@@ -267,7 +269,7 @@ const engine = new Engine(ref.current, {
 });
 ```
 
-Rendering toolbar, the toolbar has been configured with all plug-ins, here we only need to pass in the plug-in name
+Rendering toolbar, the toolbar has been configured with all plugins, here we only need to pass in the plugin name
 
 ```tsx
 return (
@@ -311,7 +313,7 @@ In the example, we have a relatively basic client code
 
 [View the complete React example](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
-[View the complete example of Vue3](https://github.com/red-axe/am-editor-vue)
+[View the complete example of Vue3](https://github.com/red-axe/am-editor-vue3-demo)
 
 [View the complete example of Vue2](https://github.com/zb201307/am-editor-vue2)
 
@@ -350,13 +352,13 @@ Visit localhost:7001 after startup
 
 ### Vue
 
-[am-editor vue example](https://github.com/red-axe/am-editor-vue)
+[am-editor vue example](https://github.com/red-axe/am-editor-vue3-demo)
 
 > Vue example powered by [**modern-vue-template**](https://github.com/byoungd/modern-vue-template)
 
 ## Contribution
 
-Thanks [pleasedmi](https://github.com/pleasedmi)、[Elena211314](https://github.com/Elena211314)、[zb201307](https://github.com/zb201307) for donation
+Thanks [pleasedmi](https://github.com/pleasedmi)、[Elena211314](https://github.com/Elena211314)、[zb201307](https://github.com/zb201307)、[cheon](https://github.com/number317) for donation
 
 ### Alipay
 

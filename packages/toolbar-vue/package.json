@@ -1,6 +1,6 @@
 {
     "name": "@aomao/toolbar-vue",
-    "version": "2.7.37",
+    "version": "2.9.35",
     "main": "dist/index.js",
     "module": "dist/index.esm.js",
     "typings": "dist/index.d.ts",
@@ -20,17 +20,22 @@
         "url": "https://github.com/yanmao-cc/am-editor/issues"
     },
     "dependencies": {
-        "@aomao/engine": "^2.7.36",
         "@babel/runtime": "^7.13.10",
-        "ant-design-vue": "^2.2.6",
         "keymaster": "^1.6.2",
         "lodash": "^4.17.21",
-        "tinycolor2": "^1.4.2",
-        "vue": "^3.2.9"
+        "tinycolor2": "^1.4.2"
     },
     "devDependencies": {
         "@types/keymaster": "^1.6.28",
         "@types/lodash": "^4.14.178",
-        "@vue/compiler-sfc": "^3.2.9"
+        "@types/tinycolor2": "^1.4.2",
+        "@vue/compiler-sfc": "^3.2.9",
+        "ant-design-vue": ">=2.2.6",
+        "vue": "^3.2.9"
+    },
+    "peerDependencies": {
+        "@aomao/engine": ">=2.9",
+        "ant-design-vue": ">=2.2.6",
+        "vue": ">=3.2.9"
     }
 }

@@ -20,10 +20,14 @@ import { toJSON0, toDOM } from '../ot/utils';
 import Parser from '../parser';
 import { TypingInterface } from '../types';
 import Typing from '../typing';
-import Container from './container';
+import Container, {
+	DATA_PLACEHOLDER,
+	DATA_PLACEHOLDER_CLASS,
+} from './container';
 import Selection from '../selection';
 import Editor from '../editor';
 import { $ } from '../node';
+import { DATA_CONTENTEDITABLE_KEY } from '../constants';
 import './index.css';
 
 class Engine<T extends EngineOptions = EngineOptions>
@@ -40,8 +44,6 @@ class Engine<T extends EngineOptions = EngineOptions>
 	history: HistoryInterface;
 	hotkey: HotkeyInterface;
 
-	readonly container: NodeInterface;
-
 	get readonly(): boolean {
 		return this._readonly;
 	}
@@ -51,9 +53,11 @@ class Engine<T extends EngineOptions = EngineOptions>
 		if (readonly) {
 			this.hotkey.disable();
 			this._container.setReadonly(true);
+			this.ot.stopMutation();
 		} else {
 			this.hotkey.enable();
 			this._container.setReadonly(false);
+			this.ot.startMutation();
 		}
 		this._readonly = readonly;
 		this.card.reRender();
@@ -67,14 +71,15 @@ class Engine<T extends EngineOptions = EngineOptions>
 		// 历史
 		this.history = new History(this);
 		// 编辑器容器
-		this._container = new Container(selector, {
+		this._container = new Container(this.container, {
 			engine: this,
 			lang: this.options.lang,
 			className: this.options.className,
 			tabIndex: this.options.tabIndex,
 			placeholder: this.options.placeholder,
+			autoPrepend: this.options.autoPrepend,
+			autoAppend: this.options.autoAppend,
 		});
-		this.container = this._container.getNode();
 		// 编辑器父节点
 		this.root = $(
 			this.options.root || this.container.parent() || getDocument().body,
@@ -88,12 +93,9 @@ class Engine<T extends EngineOptions = EngineOptions>
 		this.change = new Change(this, {
 			onChange: (trigger) => this.trigger('change', trigger),
 			onSelect: () => this.trigger('select'),
+			onSelectStart: () => this.trigger('selectStart'),
+			onSelectEnd: () => this.trigger('selectEnd'),
 			onRealtimeChange: (trigger) => {
-				if (this.isEmpty()) {
-					this._container.showPlaceholder();
-				} else {
-					this._container.hidePlaceholder();
-				}
 				this.trigger('realtimeChange', trigger);
 			},
 			onSetValue: () => this.trigger('afterSetValue'),
@@ -147,9 +149,8 @@ class Engine<T extends EngineOptions = EngineOptions>
 		) => boolean | number | void,
 	): Promise<string> {
 		return new Promise(async (resolve, reject) => {
-			const pluginNames = Object.keys(this.plugin.components);
-			for (let i = 0; i < pluginNames.length; i++) {
-				const plugin = this.plugin.components[pluginNames[i]];
+			for (const pluginName in this.plugin.components) {
+				const plugin = this.plugin.components[pluginName];
 				const result = await new Promise((resolve) => {
 					if (plugin.waiting) {
 						plugin
@@ -169,14 +170,26 @@ class Engine<T extends EngineOptions = EngineOptions>
 
 	getHtml(): string {
 		const node = $(this.container[0].cloneNode(true));
-		node.removeAttributes('contenteditable');
+		node.removeAttributes(DATA_CONTENTEDITABLE_KEY);
 		node.removeAttributes('tabindex');
 		node.removeAttributes('autocorrect');
 		node.removeAttributes('autocomplete');
 		node.removeAttributes('spellcheck');
 		node.removeAttributes('data-gramm');
+		node.removeAttributes(DATA_PLACEHOLDER);
+		node.removeClass(DATA_PLACEHOLDER_CLASS);
 		node.removeAttributes('role');
 		return new Parser(node, this).toHTML();
+	}
+
+	initDocOnReadonly() {
+		if (this.readonly && !this.ot.isRemote) {
+			if (!this.ot.doc?.type) {
+				this.ot.doc?.create(toJSON0(this.container));
+			} else {
+				this.ot.doc.data = toJSON0(this.container);
+			}
+		}
 	}
 
 	setValue(value: string, callback?: (count: number) => void) {
@@ -184,13 +197,14 @@ class Engine<T extends EngineOptions = EngineOptions>
 		this.change.setValue(value, undefined, callback);
 		this.normalize();
 		this.nodeId.generateAll(this.container);
+		this.initDocOnReadonly();
 		return this;
 	}
 
 	setHtml(html: string, callback?: (count: number) => void) {
 		this.change.setHtml(html, (count) => {
 			this.normalize();
-			this.container.allChildren(true).forEach((child) => {
+			this.container.allChildren('editable').forEach((child) => {
 				if (this.node.isInline(child)) {
 					this.inline.repairCursor(child);
 				} else if (this.node.isMark(child)) {
@@ -200,13 +214,14 @@ class Engine<T extends EngineOptions = EngineOptions>
 			if (callback) callback(count);
 		});
 		this.nodeId.generateAll(this.container);
+		this.initDocOnReadonly();
 		return this;
 	}
 
 	setMarkdown(text: string, callback?: (count: number) => void) {
 		this.change.setMarkdown(text, (count) => {
 			this.normalize();
-			this.container.allChildren(true).forEach((child) => {
+			this.container.allChildren('editable').forEach((child) => {
 				if (this.node.isInline(child)) {
 					this.inline.repairCursor(child);
 				} else if (this.node.isMark(child)) {
@@ -216,30 +231,29 @@ class Engine<T extends EngineOptions = EngineOptions>
 			if (callback) callback(count);
 		});
 		this.nodeId.generateAll(this.container);
+		this.initDocOnReadonly();
 		return this;
 	}
 
 	setJsonValue(value: Array<any>, callback?: (count: number) => void) {
 		const dom = $(toDOM(value));
-		const attributes = dom.get<Element>()?.attributes;
-		for (let i = 0; attributes && i < attributes.length; i++) {
-			const { nodeName, nodeValue } = attributes.item(i) || {};
-			if (
-				/^data-selection-/.test(nodeName || '') &&
-				nodeValue !== 'null'
-			) {
-				this.container.attributes(nodeName, nodeValue!);
-			}
-		}
 		const html = this.node.html(dom);
 		this.change.setValue(html, undefined, callback);
 		this.normalize();
 		this.nodeId.generateAll(this.container);
+		this.initDocOnReadonly();
 		return this;
 	}
 
 	getJsonValue() {
 		return toJSON0(this.container);
+	}
+
+	getText(includeCard?: boolean) {
+		return new Parser(this.container, this).toText(
+			this.schema,
+			includeCard,
+		);
 	}
 
 	normalize(container: NodeInterface = this.container) {
@@ -301,6 +315,7 @@ class Engine<T extends EngineOptions = EngineOptions>
 		this._container.destroy();
 		this.change.destroy();
 		this.hotkey.destroy();
+		this.typing.destroy();
 		if (this.ot) {
 			this.ot.destroy();
 		}

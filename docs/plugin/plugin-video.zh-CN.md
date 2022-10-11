@@ -24,7 +24,7 @@ new Engine(...,{ plugins:[ Video , VideoUploader ] , cards:[ VideoComponent ]})
 `onBeforeRender` 设置视频地址前可或者下载视频时可对地址修改。另外还可以对视频的主图修改地址。
 
 ```ts
-onBeforeRender?: (action: 'download' | 'query' | 'cover', url: string) => string;
+onBeforeRender?: (action: 'download' | 'query' | 'cover', url: string, editor: EditorInterface) => string;
 ```
 
 ## `VideoUploader` 可选项
@@ -86,7 +86,7 @@ withCredentials?: boolean;
 /**
 * 请求头
 */
-headers?: { [key: string]: string } | (() => { [key: string]: string });
+headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 /**
  * 数据返回类型，默认 json
  */
@@ -98,7 +98,7 @@ name?: string
 /**
  * 额外携带数据上传
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * 请求类型，默认 multipart/form-data;
  */
@@ -145,7 +145,7 @@ query?: {
     /**
      * 额外携带数据上传
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * 请求类型，默认 multipart/form-data;
      */

@@ -24,7 +24,19 @@ new Engine(...,{ plugins:[ File , FileUploader ] , cards:[ FileComponent ]})
 `onBeforeRender` 预览附近或者下载附件时可对地址修改
 
 ```ts
-onBeforeRender?: (action: 'download' | 'preview', url: string) => string;
+onBeforeRender?: (action: 'download' | 'preview', url: string, editor: EditorInterface) => string;
+```
+
+`onDownload` 点击下载附件时触发，默认使用地址链接跳转
+
+```ts
+onDownload?: (url: string, value: FileValue) => void;
+```
+
+`onPreview` 点击预览附件时触发，默认使用地址链接跳转
+
+```ts
+onPreview?: (url: string, value: FileValue) => void;
 ```
 
 ## `FileUploader` 可选项
@@ -78,7 +90,7 @@ withCredentials?: boolean;
 /**
 * 请求头
 */
-headers?: { [key: string]: string } | (() => { [key: string]: string });
+headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 /**
  * 数据返回类型，默认 json
  */
@@ -90,7 +102,7 @@ name?: string
 /**
  * 额外携带数据上传
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * 请求类型，默认 multipart/form-data;
  */
@@ -131,7 +143,7 @@ parse?: (response: any) => {
             preview?: string;
             download?: string;
             status?: string;
-        } | string;
+        };
 };
 ```
 

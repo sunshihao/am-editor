@@ -1,10 +1,18 @@
-import { NodeInterface, InlinePlugin, PluginOptions } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
+import {
+	NodeInterface,
+	InlinePlugin,
+	PluginOptions,
+	isEngine,
+} from '@aomao/engine';
 import './index.css';
 
 export interface CodeOptions extends PluginOptions {
 	hotkey?: string | Array<string>;
-	markdown?: string;
+	markdown?: boolean;
 }
+const PARSE_HTML = 'parse:html';
+const MARKDOWN_IT = 'markdown-it';
 export default class<
 	T extends CodeOptions = CodeOptions,
 > extends InlinePlugin<T> {
@@ -14,19 +22,24 @@ export default class<
 
 	init() {
 		super.init();
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
+		const editor = this.editor;
+		editor.on(PARSE_HTML, this.parseHtml);
+		if (isEngine(editor)) {
+			editor.on(MARKDOWN_IT, this.markdownIt);
+		}
 	}
 
 	tagName = 'code';
 
-	markdown =
-		this.options.markdown === undefined ? '`' : this.options.markdown;
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) mardown.enable('backticks');
+	};
 
 	hotkey() {
 		return this.options.hotkey || 'mod+e';
 	}
 
-	parseHtml(root: NodeInterface) {
+	parseHtml = (root: NodeInterface) => {
 		root.find(this.tagName).css({
 			'font-family': 'monospace',
 			'font-size': 'inherit',
@@ -37,5 +50,11 @@ export default class<
 			'overflow-wrap': 'break-word',
 			'text-indent': '0',
 		});
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(MARKDOWN_IT, this.markdownIt);
 	}
 }

@@ -43,7 +43,7 @@ type?:'*' |'json' |'xml' |'html' |'text' |'js';
 /**
  * Additional data upload
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * Request type, default multipart/form-data;
  */
@@ -76,7 +76,7 @@ parse?: (
 };
 ```
 
-## Plug-in method
+## Plugin method
 
 Get all mentions in the document
 
@@ -85,7 +85,7 @@ Get all mentions in the document
 engine.command.executeMethod('mention', 'getList');
 ```
 
-## Plug-in events
+## Plugin events
 
 `mention:default`: default drop-down query list to display data
 
@@ -187,7 +187,6 @@ this.engine.on(
 ```ts
 this.engine.on('mention:render-item', (data, root) => {
 	const item = $(`<div>${data}</div>`);
-	root.append(item);
 	return item;
 });
 ```

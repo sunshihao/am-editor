@@ -43,7 +43,9 @@ export interface EditorOptions {
 	/**
 	 * 插件选项，每个插件具体选项请在插件查看
 	 */
-	config?: Record<string, PluginOptions>;
+	config?:
+		| Record<string, PluginOptions>
+		| ((editor: EditorInterface) => Record<string, PluginOptions>);
 	/**
 	 * 阅读器根节点，默认为阅读器所在节点的父节点
 	 */
@@ -56,6 +58,13 @@ export interface EditorOptions {
 	 * 懒惰渲染卡片（仅限已启用 lazyRender 的卡片），默认为 true
 	 */
 	lazyRender?: boolean;
+	/**
+	 * 字体图标链接
+	 * 默认： url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'),
+       url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff?t=1638071536645') format('woff'),
+       url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype');
+	 */
+	iconFonts?: Record<'url' | 'format', string>[] | string | false;
 }
 
 export interface EditorInterface<T extends EditorOptions = EditorOptions> {
@@ -223,6 +232,23 @@ export interface EditorInterface<T extends EditorOptions = EditorOptions> {
 		rewrite?: boolean,
 	): void;
 	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	on(
+		eventType: 'parse:text',
+		listener: (
+			node: NodeInterface,
+			attributes: { [key: string]: string },
+			styles: { [key: string]: string },
+			value: Array<string>,
+		) => boolean | void,
+		rewrite?: boolean,
+	): void;
+	/**
 	 * 解析DOM节点，生成符合标准的 XML。生成xml代码结束后触发
 	 * @param value xml代码
 	 */
@@ -325,6 +351,22 @@ export interface EditorInterface<T extends EditorOptions = EditorOptions> {
 		) => boolean | void,
 	): void;
 	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	off(
+		eventType: 'parse:text',
+		listener: (
+			node: NodeInterface,
+			attributes: { [key: string]: string },
+			styles: { [key: string]: string },
+			value: Array<string>,
+		) => boolean | void,
+	): void;
+	/**
 	 * 解析DOM节点，生成符合标准的 XML。生成xml代码结束后触发
 	 * @param value xml代码
 	 */
@@ -402,6 +444,20 @@ export interface EditorInterface<T extends EditorOptions = EditorOptions> {
 		value: Array<string>,
 	): boolean | void;
 	/**
+	 * 解析DOM节点，生成文本，遍历子节点时触发。返回false跳过当前节点
+	 * @param node 当前遍历的节点
+	 * @param attributes 当前节点已过滤后的属性
+	 * @param styles 当前节点已过滤后的样式
+	 * @param value 当前已经生成的文本
+	 */
+	trigger(
+		eventType: 'parse:text',
+		node: NodeInterface,
+		attributes: { [key: string]: string },
+		styles: { [key: string]: string },
+		value: Array<string>,
+	): boolean | void;
+	/**
 	 * 解析DOM节点，生成符合标准的 XML。生成xml代码结束后触发
 	 * @param value xml代码
 	 */
@@ -430,15 +486,19 @@ export interface EditorInterface<T extends EditorOptions = EditorOptions> {
 	 * 显示成功的信息
 	 * @param message 信息
 	 */
-	messageSuccess(message: string): void;
+	messageSuccess(type: string, message: string, ...args: any[]): void;
 	/**
 	 * 显示错误信息
 	 * @param error 错误信息
 	 */
-	messageError(error: string): void;
+	messageError(type: string, error: string, ...args: any[]): void;
 	/**
 	 * 消息确认
 	 * @param message 消息
 	 */
-	messageConfirm(message: string): Promise<boolean>;
+	messageConfirm(
+		type: string,
+		message: string,
+		...args: any[]
+	): Promise<boolean>;
 }

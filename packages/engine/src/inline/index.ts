@@ -16,9 +16,8 @@ import { getDocument, isEngine } from '../utils';
 import { Backspace, Left, Right } from './typing';
 import { $ } from '../node';
 import { isNode } from '../node/utils';
-import { isInlinePlugin } from '../plugin/inline';
 import { isRangeInterface } from '../range';
-import { SchemaInterface } from 'src';
+import type { SchemaInterface } from '../types/schema';
 
 class Inline implements InlineModelInterface {
 	private editor: EditorInterface;
@@ -46,8 +45,6 @@ class Inline implements InlineModelInterface {
 			typing
 				.getHandleListener('right', 'keydown')
 				?.on((event) => right.trigger(event));
-			//markdown
-			event.on('keydown:space', (event) => this.triggerMarkdown(event));
 		}
 	}
 
@@ -113,41 +110,6 @@ class Inline implements InlineModelInterface {
 	}
 
 	/**
-	 * 解析markdown
-	 * @param event 事件
-	 */
-	triggerMarkdown(event: KeyboardEvent) {
-		const editor = this.editor;
-		if (!isEngine(editor)) return;
-		const { change } = editor;
-		let range = change.range.get();
-		if (!range.collapsed || change.isComposing()) return;
-		const { startNode, startOffset } = range;
-		const node =
-			startNode.type === Node.TEXT_NODE
-				? startNode
-				: startNode.children().eq(startOffset - 1);
-		if (!node) return;
-		const cacheRange = range.toPath();
-		const text =
-			node.type === Node.TEXT_NODE
-				? node.text().substr(0, startOffset)
-				: node.text();
-		const result = !Object.keys(editor.plugin.components).some(
-			(pluginName) => {
-				const plugin = editor.plugin.components[pluginName];
-				if (isInlinePlugin(plugin) && !!plugin.markdown) {
-					const reuslt = plugin.triggerMarkdown(event, text, node);
-					if (reuslt === false) return true;
-				}
-				return;
-			},
-		);
-		if (!result) change.rangePathBeforeCommand = cacheRange;
-		return result;
-	}
-
-	/**
 	 * 获取最近的 Inline 节点，找不到返回 node
 	 */
 	closest(source: NodeInterface) {
@@ -184,8 +146,9 @@ class Inline implements InlineModelInterface {
 	 * @param range 光标，默认获取当前光标
 	 */
 	wrap(inline: NodeInterface | Node | string, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, mark, node } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, mark, node } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		if (typeof inline === 'string' || isNode(inline)) {
@@ -229,9 +192,14 @@ class Inline implements InlineModelInterface {
 						return false;
 					}
 					if (node.isInline(child)) {
-						const children = child.children();
-						node.unwrap(child);
-						child = children;
+						if (!child.isCard()) {
+							const children = child.children();
+							node.unwrap(child);
+							child = children;
+						} else {
+							// 如果不添加，最后选中是一个inline card 的话不会被选中
+							inlnes.push(child);
+						}
 					}
 					if (
 						(node.isMark(child) && !child.isCard()) ||
@@ -288,10 +256,16 @@ class Inline implements InlineModelInterface {
 		}
 		selection.move();
 		if (inlnes.length > 0) {
-			const startNode = inlnes[0].first()!;
-			const lastNode = inlnes[inlnes.length - 1].last()!;
-			safeRange.setStart(startNode, 1);
-			safeRange.setEnd(lastNode, lastNode.text().length - 1);
+			const firstInline = inlnes[0];
+			if (!firstInline.isCard()) {
+				const startNode = firstInline.first()!;
+				safeRange.setStart(startNode, 1);
+			}
+			const lastInline = inlnes[inlnes.length - 1];
+			if (!lastInline.isCard()) {
+				const lastNode = lastInline.last()!;
+				safeRange.setEnd(lastNode, lastNode.text().length - 1);
+			}
 		}
 
 		if (!range) change.apply(safeRange);
@@ -367,8 +341,9 @@ class Inline implements InlineModelInterface {
 	 * @param range 光标
 	 */
 	insert(inline: NodeInterface | Node | string, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, node, mark } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node, mark } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		if (typeof inline === 'string' || isNode(inline)) {
@@ -387,7 +362,7 @@ class Inline implements InlineModelInterface {
 		if (inline.name !== 'br') {
 			safeRange.handleBr();
 		}
-		const hasChild = inline.children().length !== 0;
+		const hasChild = inline.get<Node>()?.childNodes.length !== 0;
 		this.repairCursor(inline);
 		//如果有内容，就让光标选择在节点外的零宽字符前
 		if (!inline.isCard() && !node.isVoid(inline)) {
@@ -715,8 +690,9 @@ class Inline implements InlineModelInterface {
 	 * 分割inline标签
 	 */
 	split(range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		const safeRange = range || change.range.toTrusty();
 		//const selection = safeRange.createSelection('inline-split');
 		if (safeRange.collapsed) {
@@ -733,14 +709,15 @@ class Inline implements InlineModelInterface {
 	 * @param range 光标
 	 */
 	findInlines(range: RangeInterface) {
+		const editor = this.editor;
 		const cloneRange = range.cloneRange();
 		if (cloneRange.startNode.isRoot()) cloneRange.shrinkToElementNode();
 		if (
 			!cloneRange.startNode.inEditor() ||
-			this.editor.card.find(cloneRange.startNode)
+			editor.card.find(cloneRange.startNode)
 		)
 			return [];
-		const nodeApi = this.editor.node;
+		const nodeApi = editor.node;
 		const handleRange = (
 			allowBlock: boolean,
 			range: RangeInterface,
@@ -880,7 +857,7 @@ class Inline implements InlineModelInterface {
 
 		const nodes = findNodes($(startNode));
 		const { commonAncestorNode } = cloneRange;
-		const card = this.editor.card.find(commonAncestorNode, true);
+		const card = editor.card.find(commonAncestorNode, true);
 		let isEditable = card?.isEditable;
 		const selectionNodes = isEditable
 			? card?.getSelectionNodes
@@ -1075,22 +1052,44 @@ class Inline implements InlineModelInterface {
 	}
 
 	flat(node: NodeInterface | RangeInterface, schema?: SchemaInterface) {
+		const editor = this.editor;
 		if (isRangeInterface(node)) {
 			const selection = node
 				.cloneRange()
 				.shrinkToElementNode()
 				.createSelection();
 			const inlines = this.findInlines(node);
+			const applyInlines: NodeInterface[] = [];
 			inlines.forEach((inline) => {
 				if (inline.isCard()) return;
-				this.flat(inline);
+				const newInline = this.flat(inline);
+				if (newInline) applyInlines.push(newInline);
 			});
 			selection.move();
+			const nodeApi = editor.node;
+			applyInlines.forEach((inline) => {
+				const prev = inline.prev()?.prev();
+				const next = inline.next()?.next();
+				if (
+					prev &&
+					nodeApi.isMark(prev) &&
+					prev.get<Element>()!.childNodes.length === 0
+				) {
+					prev.remove();
+				}
+				if (
+					next &&
+					nodeApi.isMark(next) &&
+					next.get<Element>()!.childNodes.length === 0
+				) {
+					next.remove();
+				}
+			});
 			return;
 		}
 		if (node.isCard()) return;
-		const nodeApi = this.editor.node;
-		const markApi = this.editor.mark;
+		const nodeApi = editor.node;
+		const markApi = editor.mark;
 		//当前节点是 inline 节点，inline 节点不允许嵌套、不允许放入mark节点
 		if (nodeApi.isInline(node, schema) && node.name !== 'br') {
 			const parentInline = this.closest(node);

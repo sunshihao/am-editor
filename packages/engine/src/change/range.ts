@@ -4,8 +4,9 @@ import {
 	RangeInterface,
 } from '../types';
 import { $ } from '../node';
-import { CARD_ELEMENT_KEY } from '../constants';
+import { CARD_ELEMENT_KEY, CARD_KEY, EDITABLE_SELECTOR } from '../constants';
 import Range from '../range';
+import { isFirefox } from '../utils';
 
 export type ChangeRangeOptions = {
 	onSelect?: (range: RangeInterface) => void;
@@ -19,16 +20,11 @@ class ChangeRange implements ChangeRangeInterface {
 	constructor(engine: EngineInterface, options: ChangeRangeOptions = {}) {
 		this.engine = engine;
 		this.#otpions = options;
+	}
 
-		this.engine.on('foucs', () => {
-			this.#lastBlurRange = undefined;
-		});
-
-		this.engine.on('blur', () => {
-			const range = this.get();
-			if (range.commonAncestorNode.inEditor())
-				this.#lastBlurRange = range;
-		});
+	setLastBlurRange(range?: RangeInterface) {
+		if (range?.commonAncestorNode.inEditor()) this.#lastBlurRange = range;
+		else this.#lastBlurRange = undefined;
 	}
 
 	/**
@@ -145,14 +141,31 @@ class ChangeRange implements ChangeRangeInterface {
 			if (
 				((startNode.isElement() &&
 					1 === startOffset &&
-					1 === startNode.children().length) ||
+					1 === startNode.get<Node>()?.childNodes.length) ||
 					(2 === startOffset &&
-						2 === startNode.children().length &&
+						2 === startNode.get<Node>()?.childNodes.length &&
 						startNode.first()?.isCard())) &&
 				'br' === startNode.last()?.name
 			) {
 				range.setStart(startNode, startOffset - 1);
 				range.collapse(true);
+			}
+			// 卡片左右侧光标零宽字符节点
+			if (startNode.isText()) {
+				const parent = startNode.parent();
+				if (
+					parent?.attributes(CARD_ELEMENT_KEY) === 'right' &&
+					startOffset === 0
+				) {
+					range.setStart(startNode, 1);
+					range.collapse(true);
+				} else if (
+					parent?.attributes(CARD_ELEMENT_KEY) === 'left' &&
+					startOffset === 1
+				) {
+					range.setStart(startNode, 0);
+					range.collapse(true);
+				}
 			}
 		}
 		//修复inline光标
@@ -202,22 +215,32 @@ class ChangeRange implements ChangeRangeInterface {
 				startNode.parent()?.equal(inlineNode) &&
 				startOffset === 0
 			) {
-				range.setStart(startNode, startOffset + 1);
-				if (range.collapsed) range.collapse(true);
+				const text = startNode.text();
+				if (/^\u200B/g.test(text)) {
+					range.setStart(startNode, startOffset + 1);
+					if (range.collapsed) range.collapse(true);
+				}
 			}
 			//右侧
 			if (
 				endNode.isText() &&
 				!endNode.next() &&
-				endNode.parent()?.equal(inlineNode) &&
-				endOffset === endNode.text().length
+				endNode.parent()?.equal(inlineNode)
 			) {
-				range.setEnd(endNode, endOffset - 1);
-				if (range.collapsed) range.collapse(false);
+				const text = endNode.text();
+				if (endOffset === text.length && /\u200B$/g.test(text)) {
+					range.setEnd(endNode, endOffset - 1);
+					if (range.collapsed) range.collapse(false);
+				}
 			}
 		}
 		startNode = range.startNode;
 		endNode = range.endNode;
+		if (startNode.isText() || endNode.isText()) {
+			const cloneRange = range.cloneRange().enlargeFromTextNode();
+			startNode = cloneRange.startNode;
+			endNode = cloneRange.endNode;
+		}
 		const startChildNodes = startNode.children();
 		// 自定义列表节点选中卡片前面就让光标到卡片后面去
 		if (node.isCustomize(startNode) && startOffset === 0) {
@@ -231,18 +254,20 @@ class ChangeRange implements ChangeRangeInterface {
 		if (startNode.name === 'p' && !otStopped) {
 			if (startChildNodes.length === 0) startNode.append('<br />');
 			else if (
+				!isFirefox &&
 				startChildNodes.length > 1 &&
 				startChildNodes[startChildNodes.length - 2].nodeName !== 'BR' &&
 				startChildNodes[startChildNodes.length - 1].nodeName === 'BR'
 			) {
-				startNode.last()?.remove();
+				const br = startNode.last();
+				br?.remove();
 			}
 		}
 		if (
 			!range.collapsed &&
 			!otStopped &&
 			endNode.name === 'p' &&
-			endNode.children().length === 0
+			endNode.get<Node>()?.childNodes.length === 0
 		) {
 			endNode.append('<br />');
 		}
@@ -261,6 +286,19 @@ class ChangeRange implements ChangeRangeInterface {
 		}
 		// 空列表添加br
 		if (startNode.name === 'li' && !otStopped) {
+			if (node.isCustomize(startNode) && !startNode.first()?.isCard()) {
+				const cardItem = startNode
+					.parent()
+					?.children()
+					.toArray()
+					.find((child) => child.first()?.isCard());
+				const cardKey = cardItem?.first()?.attributes(CARD_KEY);
+				if (cardKey) {
+					this.engine.list.addCardToCustomize(startNode, cardKey);
+				} else {
+					this.engine.list.unwrapCustomize(startNode);
+				}
+			}
 			if (startChildNodes.length === 0) {
 				startNode.append('<br />');
 			} else if (
@@ -313,7 +351,7 @@ class ChangeRange implements ChangeRangeInterface {
 		if (
 			startNode.isEditable() &&
 			!otStopped &&
-			startNode.children().length === 0 &&
+			startNode.get<Node>()?.childNodes.length === 0 &&
 			!this.engine.ot.isStopped
 		) {
 			startNode.html('<p><br /></p>');
@@ -323,7 +361,8 @@ class ChangeRange implements ChangeRangeInterface {
 			selection &&
 			(range.collapsed ||
 				(selection.rangeCount > 0 &&
-					!range.equal(selection.getRangeAt(0))))
+					!range.equal(selection.getRangeAt(0)))) &&
+			range.startNode.get<Node>()?.isConnected
 		) {
 			selection.removeAllRanges();
 			selection.addRange(range.toRange());
@@ -345,11 +384,32 @@ class ChangeRange implements ChangeRangeInterface {
 				.collapse(toStart);
 		}
 		this.select(range);
-		this.engine.container.get<HTMLElement>()?.focus();
+		const editableElement =
+			range.commonAncestorNode.closest(EDITABLE_SELECTOR);
+		editableElement?.get<HTMLElement>()?.focus();
+		if (
+			editableElement.length > 0 &&
+			!this.engine.container.equal(editableElement)
+		) {
+			const mouseEvent = new MouseEvent('mousedown');
+			this.engine.container.get<HTMLElement>()?.dispatchEvent(mouseEvent);
+			setTimeout(() => {
+				const mouseEvent = new MouseEvent('mouseup');
+				this.engine.container
+					.get<HTMLElement>()
+					?.dispatchEvent(mouseEvent);
+			}, 0);
+		}
 	}
 
 	blur() {
+		const range = this.get();
+		range.commonAncestorNode
+			.closest(EDITABLE_SELECTOR)
+			.get<HTMLElement>()
+			?.blur();
 		this.engine.container.get<HTMLElement>()?.blur();
+		this.engine.trigger('blur');
 	}
 }
 export default ChangeRange;

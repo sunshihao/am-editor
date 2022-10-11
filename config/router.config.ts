@@ -39,7 +39,7 @@ export default (opts: {
 		],
 		'/plugin': [
 			{
-				title: 'Plug-in development',
+				title: 'Plugin development',
 				'title_zh-CN': '插件开发',
 				children: [
 					{
@@ -78,6 +78,7 @@ export default (opts: {
 					'/plugin/plugin-image',
 					'/plugin/plugin-link',
 					'/plugin/plugin-line-height',
+					'/plugin/plugin-lightblock',
 					{
 						title: '@aomao/plugin-mark',
 						path: '/plugin/plugin-mark',
@@ -86,6 +87,7 @@ export default (opts: {
 					'/plugin/plugin-mark-range',
 					'/plugin/plugin-math',
 					'/plugin/plugin-mention',
+					'/plugin/plugin-mermaid',
 					'/plugin/plugin-orderedlist',
 					'/plugin/plugin-paintformat',
 					'/plugin/plugin-quote',

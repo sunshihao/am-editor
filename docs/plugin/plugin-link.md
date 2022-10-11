@@ -5,19 +5,19 @@ Link plugin
 ## Installation
 
 ```bash
-$ yarn add @aomao/plugin-link
+yarn add @aomao/plugin-link
 ```
 
 `Vue3` use
 
 ```bash
-$ yarn add @aomao/plugin-link-vue
+yarn add @aomao/plugin-link-vue
 ```
 
 `Vue2` use
 
 ```bash
-$ yarn add am-editor-link-vue2
+yarn add am-editor-link-vue2
 ```
 
 Add to engine
@@ -31,7 +31,7 @@ new Engine(...,{ plugins:[Link] })
 
 ## Optional
 
-### hot key
+### Hotkey
 
 The default shortcut key is `mod+k`, and the default parameter is ["_blank"]
 
@@ -53,25 +53,6 @@ new Engine(...,{
  })
 ```
 
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-Link plug-in markdown syntax is `[text](link address)` and it is triggered after pressing enter
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        "link":{
-            //Close markdown
-            markdown:false
-        }
-    }
- })
-```
-
 ### onConfirm
 
 The url or text to be modified can be modified
@@ -83,6 +64,22 @@ onConfirm?: (
      text: string,
      link: string,
 ) => Promise<{ text: string; link: string }>;
+```
+
+### enableToolbar
+
+Whether to enable the toolbar for link editing
+
+```ts
+enableToolbar?: boolean;
+```
+
+### onLinkClick
+
+Fired when a link is clicked in edit mode
+
+```ts
+onLinkClick?: (e: MouseEvent, link: string) => void;
 ```
 
 ## Command

@@ -5,11 +5,13 @@ import {
 	CARD_KEY,
 	SchemaBlock,
 	isEngine,
-	PluginEntry,
 	PluginOptions,
 	decodeCardValue,
 	CARD_VALUE_KEY,
+	READY_CARD_KEY,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
+import TaskMarkdown from './markdown';
 import CheckboxComponent, { CheckboxValue } from './checkbox';
 import './index.css';
 
@@ -18,6 +20,11 @@ export interface TasklistOptions extends PluginOptions {
 	markdown?: boolean | string[];
 }
 
+const TASK_LIST_CLASS = 'data-list-task';
+const PARSE_HTML = 'parse:html';
+const MARKDOWN_IT = 'markdown-it';
+const PASTE_EACH = 'paste:each';
+const PASTE_EACH_AFTER = 'paste:each-after';
 export default class<
 	T extends TasklistOptions = TasklistOptions,
 > extends ListPlugin<T> {
@@ -37,7 +44,7 @@ export default class<
 	variable = {
 		'@var0': {
 			required: true,
-			value: [this.editor.list.CUSTOMZIE_UL_CLASS, 'data-list-task'],
+			value: [this.editor.list.CUSTOMZIE_UL_CLASS, TASK_LIST_CLASS],
 		},
 		'@var1': '@number',
 	};
@@ -46,42 +53,12 @@ export default class<
 
 	init() {
 		super.init();
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		if (isEngine(this.editor)) {
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
-			this.editor.on('paste:markdown', (child) =>
-				this.pasteMarkdown(child),
-			);
-			this.editor.on('paste:each-after', (root) => {
-				const liNodes = root.find(
-					`li.${this.editor.list.CUSTOMZIE_LI_CLASS}`,
-				);
-				liNodes.each((_, index) => {
-					const child = liNodes.eq(index);
-					if (!child) return;
-					const firstChild = child.first();
-					if (
-						firstChild &&
-						firstChild.name === CheckboxComponent.cardName
-					) {
-						const card =
-							this.editor.card.find<CheckboxValue>(firstChild);
-						if (card) {
-							const parent = child.parent();
-							parent?.addClass('data-list-task');
-							const value = card.getValue();
-							if (value && value.checked) {
-								parent?.attributes('checked', 'true');
-							} else {
-								parent?.removeAttributes('checked');
-							}
-						}
-					}
-				});
-			});
+		const editor = this.editor;
+		editor.on(PARSE_HTML, this.parseHtml);
+		if (isEngine(editor)) {
+			editor.on(MARKDOWN_IT, this.markdownIt);
+			editor.on(PASTE_EACH_AFTER, this.pasteEachAfter);
+			editor.on(PASTE_EACH, this.pasteHtml);
 		}
 	}
 
@@ -110,12 +87,13 @@ export default class<
 				node.hasClass(this.editor.list.CUSTOMZIE_LI_CLASS) &&
 				node.first()?.attributes(CARD_KEY) === 'checkbox'
 			);
-		return node.hasClass('data-list') && node.hasClass('data-list-task');
+		return node.hasClass('data-list') && node.hasClass(TASK_LIST_CLASS);
 	}
 
 	execute(value?: any) {
-		if (!isEngine(this.editor)) return;
-		const { change, list, block } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, list, block } = editor;
 		list.split();
 		const range = change.range.get();
 		const activeBlocks = block.findBlocks(range);
@@ -130,8 +108,8 @@ export default class<
 					value,
 				) as Array<NodeInterface>;
 				listBlocks.forEach((list) => {
-					if (this.editor.node.isList(list))
-						list.addClass('data-list-task');
+					if (editor.node.isList(list))
+						list.addClass(TASK_LIST_CLASS);
 				});
 			}
 			selection.move();
@@ -158,10 +136,10 @@ export default class<
 		return this.options.hotkey || 'mod+shift+9';
 	}
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: CheckboxValue) => NodeInterface,
-	) {
+	) => {
 		const getBox = (inner: string = '') => {
 			return `<span style="${
 				inner
@@ -169,7 +147,8 @@ export default class<
 					: 'background:#fff;'
 			}width: 16px;height: 16px;display: inline-block;border: 1px solid #347eff;border-radius: 2px;transition: all 0.3s;border-collapse: separate;">${inner}</span>`;
 		};
-		root.find(`[${CARD_KEY}=checkbox`).each((checkboxNode) => {
+		const results: NodeInterface[] = [];
+		root.find(`[${CARD_KEY}="checkbox"]`).each((checkboxNode) => {
 			const node = $(checkboxNode);
 
 			let checkbox = $(
@@ -186,7 +165,7 @@ export default class<
 				'vertical-align': 'middle',
 				width: '16px',
 				height: '16px',
-				color: 'color: rgba(0, 0, 0, 0.65)',
+				color: 'rgba(0, 0, 0, 0.65)',
 			});
 			node.empty();
 			if (callback) {
@@ -200,126 +179,74 @@ export default class<
 				if (value) checkbox = callback(checkbox, value);
 			}
 			node.append(checkbox);
+			results.push(node);
 		});
-		root.find('.data-list-task').css({
+		root.find(`.${TASK_LIST_CLASS}`).css({
 			'list-style': 'none',
 		});
-	}
+		return results;
+	};
 
-	//设置markdown
-	markdown(event: KeyboardEvent, text: string, block: NodeInterface) {
-		const { markdown } = this.options;
-		if (!isEngine(this.editor) || markdown === false) return;
-		const { node, command } = this.editor;
-		const blockApi = this.editor.block;
-		const plugin = blockApi.findPlugin(block);
-		// fix: 列表、引用等 markdown 快捷方式不应该在标题内生效
-		if (
-			block.name !== 'p' ||
-			(plugin &&
-				(plugin.constructor as PluginEntry).pluginName === 'heading')
-		) {
-			return;
+	markdownIt = (markdown: MarkdownIt) => {
+		const editor = this.editor;
+		if (this.options.markdown !== false) {
+			markdown.use(TaskMarkdown, {
+				itemClass: editor.list.CUSTOMZIE_LI_CLASS,
+				rootClass: `${editor.list.CUSTOMZIE_UL_CLASS} ${TASK_LIST_CLASS}`,
+			});
+			markdown.enable('task-list');
 		}
+	};
 
-		let markdownWords = ['[]', '[ ]', '[x]'];
-		if (Array.isArray(markdown)) {
-			markdownWords = markdown;
-		}
-
-		if (markdownWords.indexOf(text) < 0) return;
-		event.preventDefault();
-		blockApi.removeLeftText(block);
-		if (node.isEmpty(block)) {
-			block.empty();
-			block.append('<br />');
-		}
-		command.execute(
-			(this.constructor as PluginEntry).pluginName,
-			text === '[x]' ? { checked: true } : undefined,
-		);
-		return false;
-	}
-
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		if (!text) return;
-
-		const reg = /(^|\r\n|\n)(-\s*)?(\[[\sx]{0,1}\])/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		const { match } = result;
-		if (!match) return;
-
-		const { list, card } = this.editor;
-
-		const createList = (nodes: Array<string>, indent?: number) => {
-			const listNode = $(
-				`<${this.tagName} class="${
-					list.CUSTOMZIE_UL_CLASS
-				} data-list-task">${nodes.join('')}</${this.tagName}>`,
-			);
-			if (indent) {
-				listNode.attributes(this.editor.list.INDENT_KEY, indent);
+	pasteHtml = (node: NodeInterface) => {
+		if (!isEngine(this.editor)) return;
+		if (node.isElement()) {
+			const attributes = node.attributes();
+			const type = attributes[CARD_KEY] || attributes[READY_CARD_KEY];
+			if (
+				type &&
+				type === CheckboxComponent.cardName &&
+				node.parent()?.name !== 'li'
+			) {
+				node.remove();
+				return false;
 			}
-			list.addBr(listNode);
-			return listNode.get<Element>()?.outerHTML;
-		};
-		const text = node.text();
-		let newText = match[1] || '';
-		const rows = text.split(/\n|\r\n/);
-		let nodes: Array<string> = [];
-		let indent = 0;
-		rows.forEach((row) => {
-			const match = /^(\s*)(-\s*)?(\[[\sx]{0,1}\])/.exec(row);
-			if (match && !/(\[(.*)\]\(([\S]+?)\))/.test(row)) {
-				const codeLength = match[0].length;
-				const content = row.substr(
-					/^\s+/.test(row.substr(codeLength))
-						? codeLength + 1
-						: codeLength,
-				);
-				const tempNode = $('<span />');
-				const cardNode = card.replaceNode<CheckboxValue>(
-					tempNode,
-					this.cardName,
-					{
-						checked: match[0].indexOf('x') > 0,
-					},
-				);
-				tempNode.remove();
-				if (match[1].length !== indent && nodes.length > 0) {
-					newText += createList(nodes, indent);
-					nodes = [];
-					indent = Math.ceil(match[1].length / 2);
+		}
+		return true;
+	};
+
+	pasteEachAfter = (root: NodeInterface) => {
+		const editor = this.editor;
+		const liNodes = root.find(`li.${editor.list.CUSTOMZIE_LI_CLASS}`);
+		liNodes.each((_, index) => {
+			const child = liNodes.eq(index);
+			if (!child) return;
+			const firstChild = child.first();
+			if (firstChild && firstChild.name === CheckboxComponent.cardName) {
+				const card = editor.card.find<CheckboxValue>(firstChild);
+				if (card) {
+					const parent = child.parent();
+					parent?.addClass(TASK_LIST_CLASS);
+					const value = card.getValue();
+					if (value && value.checked) {
+						parent?.attributes('checked', 'true');
+					} else {
+						parent?.removeAttributes('checked');
+					}
 				}
-				nodes.push(
-					`<li class="${list.CUSTOMZIE_LI_CLASS}">${
-						cardNode.get<Element>()?.outerHTML
-					}${content}</li>`,
-				);
-			} else if (nodes.length > 0) {
-				newText += createList(nodes, indent) + '\n' + row + '\n';
-				nodes = [];
-			} else {
-				newText += row + '\n';
 			}
 		});
-		if (nodes.length > 0) {
-			newText += createList(nodes, indent) + '\n';
+	};
+
+	destroy(): void {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		if (isEngine(editor)) {
+			editor.off(MARKDOWN_IT, this.markdownIt);
+			editor.off(PASTE_EACH_AFTER, this.pasteEachAfter);
+			editor.off(PASTE_EACH, this.pasteHtml);
 		}
-		node.text(newText);
 	}
 }
-export { CheckboxComponent };
+export { CheckboxComponent, TaskMarkdown };
 export type { CheckboxValue };

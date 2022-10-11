@@ -52,14 +52,14 @@ type?:'*' |'json' |'xml' |'html' |'text' |'js';
 /**
  * Additional data upload
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * Request type, default application/json;
  */
 contentType?: string;
 ```
 
-After configuration, the plug-in will use the `content` field to POST to the specified `action` address, which contains the formula code
+After configuration, the plugin will use the `content` field to POST to the specified `action` address, which contains the formula code
 
 ### Analyze server response data
 

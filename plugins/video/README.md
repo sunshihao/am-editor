@@ -5,7 +5,7 @@
 ## 安装
 
 ```bash
-$ yarn add @aomao/plugin-video
+yarn add @aomao/plugin-video
 ```
 
 添加到引擎
@@ -24,7 +24,15 @@ new Engine(...,{ plugins:[ Video , VideoUploader ] , cards:[ VideoComponent ]})
 `onBeforeRender` 设置视频地址前可或者下载视频时可对地址修改。另外还可以对视频的主图修改地址。
 
 ```ts
-onBeforeRender?: (action: 'download' | 'query' | 'cover', url: string) => string;
+onBeforeRender?: (action: 'download' | 'query' | 'cover', url: string, editor: EditorInterface) => string;
+```
+
+### 是否显示视频标题
+
+默认显示
+
+```ts
+showTitle?: boolean
 ```
 
 ## `VideoUploader` 可选项
@@ -40,21 +48,13 @@ new Engine(...,{
  })
 ```
 
-### 是否显示视频标题
-
-默认显示
-
-```ts
-showTitle?: boolean
-```
-
 ### 文件上传
 
 `action`: 上传地址，始终使用 `POST` 请求
 
 `crossOrigin`: 是否跨域
 
-`withCredentials`: https://developer.mozilla.org/zh-CN/docs/Web/API/XMLHttpRequest/withCredentials
+`withCredentials`: <https://developer.mozilla.org/zh-CN/docs/Web/API/XMLHttpRequest/withCredentials>
 
 `headers`: 请求头
 
@@ -86,7 +86,7 @@ withCredentials?: boolean;
 /**
 * 请求头
 */
-headers?: { [key: string]: string } | (() => { [key: string]: string });
+headers?: Record<string, string> | (() => Promise<Record<string, string>>);
 /**
  * 数据返回类型，默认 json
  */
@@ -98,7 +98,7 @@ name?: string
 /**
  * 额外携带数据上传
  */
-data?: {};
+data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
 /**
  * 请求类型，默认 multipart/form-data;
  */
@@ -145,7 +145,7 @@ query?: {
     /**
      * 额外携带数据上传
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * 请求类型，默认 multipart/form-data;
      */

@@ -3,6 +3,8 @@ import {
 	Card,
 	CardToolbarItemOptions,
 	CardType,
+	closest,
+	DATA_CONTENTEDITABLE_KEY,
 	EDITABLE_SELECTOR,
 	getComputedStyle,
 	isEngine,
@@ -73,7 +75,9 @@ class TableComponent<V extends TableValue = TableValue>
 	rowMinHeight =
 		this.editor.plugin.findPlugin<TableOptions>('table')?.options
 			.rowMinHeight || 35;
-
+	maxInsertNum =
+		this.editor.plugin.findPlugin<TableOptions>('table')?.options
+			.maxInsertNum || 30;
 	wrapper?: NodeInterface;
 	helper: HelperInterface = new Helper(this.editor);
 	template: TemplateInterface = new Template(this);
@@ -81,6 +85,7 @@ class TableComponent<V extends TableValue = TableValue>
 	conltrollBar: ControllBarInterface = new ControllBar(this.editor, this, {
 		col_min_width: this.colMinWidth,
 		row_min_height: this.rowMinHeight,
+		max_insert_num: this.maxInsertNum,
 	});
 	command: TableCommandInterface = new TableCommand(this.editor, this);
 	scrollbar?: Scrollbar;
@@ -92,20 +97,19 @@ class TableComponent<V extends TableValue = TableValue>
 
 	init() {
 		super.init();
-		if (isEngine(this.editor)) {
-			this.editor.on('undo', this.doChange);
-			this.editor.on('redo', this.doChange);
+		const editor = this.editor;
+		if (isEngine(editor)) {
 			// tab 键选择
-			if (!this.editor.event.listeners['keydown:tab'])
-				this.editor.event.listeners['keydown:tab'] = [];
-			this.editor.event.listeners['keydown:tab'].unshift(
+			if (!editor.event.listeners['keydown:tab'])
+				editor.event.listeners['keydown:tab'] = [];
+			editor.event.listeners['keydown:tab'].unshift(
 				(event: KeyboardEvent) => {
-					if (!isEngine(this.editor)) return;
-					const { change, block, node, card } = this.editor;
+					if (!isEngine(editor) || editor.readonly) return;
+					const { change, block, node, card } = editor;
 
 					const range = change.range.get();
 					const td = range.endNode.closest('td');
-					if (td.length === 0) return;
+					if (td.length === 0 || !td.inEditor()) return;
 					const component = card.closest(td, true);
 					if (!component?.equal(this.root)) return;
 					const closestBlock = block.closest(range.endNode);
@@ -146,13 +150,13 @@ class TableComponent<V extends TableValue = TableValue>
 				},
 			);
 			// 下键选择
-			this.editor.on('keydown:down', (event) => {
-				if (!isEngine(this.editor)) return;
-				const { change, card } = this.editor;
+			editor.on('keydown:down', (event) => {
+				if (!isEngine(editor) || editor.readonly) return;
+				const { change, card } = editor;
 
 				const range = change.range.get();
 				const td = range.endNode.closest('td');
-				if (td.length === 0) return;
+				if (td.length === 0 || !td.inEditor()) return;
 				const component = card.closest(td, true);
 				if (!component?.equal(this.root)) return;
 				const contentElement = td.find('.table-main-content');
@@ -214,13 +218,13 @@ class TableComponent<V extends TableValue = TableValue>
 				return;
 			});
 			// 上键选择
-			this.editor.on('keydown:up', (event) => {
-				if (!isEngine(this.editor)) return;
-				const { change, card } = this.editor;
+			editor.on('keydown:up', (event) => {
+				if (!isEngine(editor) || editor.readonly) return;
+				const { change, card } = editor;
 
 				const range = change.range.get();
 				const td = range.endNode.closest('td');
-				if (td.length === 0) return;
+				if (td.length === 0 || !td.inEditor()) return;
 				const component = card.closest(td, true);
 				if (!component?.equal(this.root)) return;
 				const contentElement = td.find('.table-main-content');
@@ -281,13 +285,13 @@ class TableComponent<V extends TableValue = TableValue>
 				return;
 			});
 			// 左键选择
-			this.editor.on('keydown:left', () => {
-				if (!isEngine(this.editor)) return;
-				const { change, card } = this.editor;
+			editor.on('keydown:left', () => {
+				if (!isEngine(editor) || editor.readonly) return;
+				const { change, card } = editor;
 
 				const range = change.range.get();
 				const td = range.endNode.closest('td');
-				if (td.length === 0) return;
+				if (td.length === 0 || !td.inEditor()) return;
 				const component = card.closest(td, true);
 				if (!component?.equal(this.root)) return;
 				const contentElement = td.find('.table-main-content');
@@ -299,13 +303,13 @@ class TableComponent<V extends TableValue = TableValue>
 				}
 			});
 			// 右键选择
-			this.editor.on('keydown:right', () => {
-				if (!isEngine(this.editor)) return;
-				const { change, card } = this.editor;
+			editor.on('keydown:right', () => {
+				if (!isEngine(editor) || editor.readonly) return;
+				const { change, card } = editor;
 
 				const range = change.range.get();
 				const td = range.endNode.closest('td');
-				if (td.length === 0) return;
+				if (td.length === 0 || !td.inEditor()) return;
 				const component = card.closest(td, true);
 				if (!component?.equal(this.root)) return;
 				const contentElement = td.find('.table-main-content');
@@ -318,143 +322,179 @@ class TableComponent<V extends TableValue = TableValue>
 			});
 		}
 		if (this.colorTool) return;
-		this.colorTool = new ColorTool(this.editor, this.id, {
+		this.colorTool = new ColorTool(editor, this.id, {
 			colors: TableComponent.colors,
 			defaultColor: super.getValue()?.color,
 			onChange: (color: string) => {
-				this.setValue({
-					color,
-				} as V);
 				this.conltrollBar.drawBackgroundColor(color);
+				const value = this.getValue();
+				this.setValue({ ...value, color });
 			},
 		});
 	}
 
 	doChange = () => {
+		this.remoteRefresh();
 		this.handleChange('local');
 	};
 
-	toolbar(): Array<ToolbarItemOptions | CardToolbarItemOptions> {
-		if (!isEngine(this.editor) || this.editor.readonly)
-			return [
-				{
-					type: 'maximize',
-				},
-			];
-		const language = this.editor.language.get('table');
-		const funBtns: Array<ToolbarItemOptions | CardToolbarItemOptions> = [
-			{
-				type: 'node',
-				title: this.editor.language.get<string>(
-					'table',
-					'color',
-					'title',
-				),
-				node: this.colorTool!.getButton(),
-			},
-			{
-				type: 'button',
-				title: language['noBorder'],
-				content: '<span class="data-icon data-icon-no-border"></span>',
-				didMount: (node) => {
-					const value = super.getValue();
-					if (value?.noBorder === true) {
-						node.addClass('active');
-					}
-					this.noBorderToolButton = node;
-				},
-				onClick: (_, node) => {
-					const value = super.getValue();
-					this.setValue({
-						noBorder: !value?.noBorder,
-					} as V);
-					const table = this.wrapper?.find('.data-table');
-					if (value?.noBorder === true) {
-						table?.removeAttributes('data-table-no-border');
-						node.removeClass('active');
-					} else {
-						table?.attributes('data-table-no-border', 'true');
-						node.addClass('active');
-					}
-				},
-			},
-			{
-				type: 'dropdown',
-				content: '<span class="data-icon data-icon-align-top" />',
-				title: language['verticalAlign']['title'],
-				didMount: (node) => {
-					this.alignToolButton = node.find('.data-toolbar-btn');
-				},
-				items: [
+	toolbar(): (ToolbarItemOptions | CardToolbarItemOptions)[] {
+		const editor = this.editor;
+		const getItems = (): (
+			| ToolbarItemOptions
+			| CardToolbarItemOptions
+		)[] => {
+			if (!isEngine(editor) || editor.readonly)
+				return [
 					{
-						type: 'button',
-						content: `<span class="data-icon data-icon-align-top"></span> ${language['verticalAlign']['top']}`,
-						onClick: (event: MouseEvent) =>
-							this.updateAlign(event, 'top'),
+						key: 'maximize',
+						type: 'maximize',
+					},
+				];
+			const language = editor.language.get('table');
+			const funBtns: Array<ToolbarItemOptions | CardToolbarItemOptions> =
+				[
+					{
+						key: 'color',
+						type: 'node',
+						title: editor.language.get<string>(
+							'table',
+							'color',
+							'title',
+						),
+						node: this.colorTool!.getButton(),
 					},
 					{
+						key: 'border',
 						type: 'button',
-						content: `<span class="data-icon data-icon-align-middle"></span> ${language['verticalAlign']['middle']}`,
-						onClick: (event: MouseEvent) =>
-							this.updateAlign(event, 'middle'),
+						title: super.getValue()?.noBorder
+							? language['showBorder']
+							: language['noBorder'],
+						content:
+							'<span class="data-icon data-icon-no-border"></span>',
+						didMount: (node) => {
+							const value = super.getValue();
+							if (value?.noBorder === true) {
+								node.addClass('active');
+							}
+							this.noBorderToolButton = node;
+						},
+						onClick: (_, node) => {
+							const value = super.getValue();
+							this.setValue({
+								noBorder: !value?.noBorder,
+							} as V);
+							const table = this.wrapper?.find('.data-table');
+							if (value?.noBorder === true) {
+								table?.removeAttributes('data-table-no-border');
+								node.removeClass('active');
+							} else {
+								table?.attributes(
+									'data-table-no-border',
+									'true',
+								);
+								node.addClass('active');
+							}
+						},
 					},
 					{
-						type: 'button',
-						content: `<span class="data-icon data-icon-align-bottom"></span> ${language['verticalAlign']['bottom']}`,
-						onClick: (event: MouseEvent) =>
-							this.updateAlign(event, 'bottom'),
+						key: 'align',
+						type: 'dropdown',
+						content:
+							'<span class="data-icon data-icon-align-top" />',
+						title: language['verticalAlign']['title'],
+						didMount: (node) => {
+							this.alignToolButton =
+								node.find('.data-toolbar-btn');
+						},
+						items: [
+							{
+								type: 'button',
+								content: `<span class="data-icon data-icon-align-top"></span> ${language['verticalAlign']['top']}`,
+								onClick: (event: MouseEvent) =>
+									this.updateAlign(event, 'top'),
+							},
+							{
+								type: 'button',
+								content: `<span class="data-icon data-icon-align-middle"></span> ${language['verticalAlign']['middle']}`,
+								onClick: (event: MouseEvent) =>
+									this.updateAlign(event, 'middle'),
+							},
+							{
+								type: 'button',
+								content: `<span class="data-icon data-icon-align-bottom"></span> ${language['verticalAlign']['bottom']}`,
+								onClick: (event: MouseEvent) =>
+									this.updateAlign(event, 'bottom'),
+							},
+						],
 					},
-				],
-			},
-			{
-				type: 'button',
-				title: language['mergeCell'],
-				content:
-					'<span class="data-icon data-icon-merge-cells"></span>',
-				disabled: this.conltrollBar.getMenuDisabled('mergeCell'),
-				onClick: () => {
-					this.command.mergeCell();
-				},
-			},
-			{
-				type: 'button',
-				title: language['splitCell'],
-				content:
-					'<span class="data-icon data-icon-solit-cells"></span>',
-				disabled: this.conltrollBar.getMenuDisabled('splitCell'),
-				onClick: () => {
-					this.command.splitCell();
-				},
-			},
-		];
-		if (this.isMaximize) return funBtns;
-		const toolbars: Array<ToolbarItemOptions | CardToolbarItemOptions> = [
-			{
-				type: 'maximize',
-			},
-			{
-				type: 'copy',
-				onClick: () => {
-					this.command.copy(true);
-					this.editor.messageSuccess(
-						this.editor.language.get<string>('copy', 'success'),
-					);
-				},
-			},
-			{
-				type: 'delete',
-			},
-			{
-				type: 'separator',
-			},
-			...funBtns,
-		];
-		if (removeUnit(this.wrapper?.css('margin-left') || '0') === 0) {
-			toolbars.unshift({
-				type: 'dnd',
-			});
+					{
+						key: 'merge',
+						type: 'button',
+						title: language['mergeCell'],
+						content:
+							'<span class="data-icon data-icon-merge-cells"></span>',
+						disabled:
+							this.conltrollBar.getMenuDisabled('mergeCell'),
+						onClick: () => {
+							this.command.mergeCell();
+						},
+					},
+					{
+						key: 'split',
+						type: 'button',
+						title: language['splitCell'],
+						content:
+							'<span class="data-icon data-icon-solit-cells"></span>',
+						disabled:
+							this.conltrollBar.getMenuDisabled('splitCell'),
+						onClick: () => {
+							this.command.splitCell();
+						},
+					},
+				];
+			if (this.isMaximize) return funBtns;
+			const toolbars: Array<ToolbarItemOptions | CardToolbarItemOptions> =
+				[
+					{
+						key: 'maximize',
+						type: 'maximize',
+					},
+					{
+						key: 'copy',
+						type: 'copy',
+						onClick: () => {
+							this.command.copy(true);
+							editor.messageSuccess(
+								'copy',
+								editor.language.get<string>('copy', 'success'),
+							);
+						},
+					},
+					{
+						key: 'delete',
+						type: 'delete',
+					},
+					{
+						key: 'separator',
+						type: 'separator',
+					},
+					...funBtns,
+				];
+			if (removeUnit(this.wrapper?.css('margin-left') || '0') === 0) {
+				toolbars.unshift({
+					key: 'dnd',
+					type: 'dnd',
+				});
+			}
+			return toolbars;
+		};
+		const options =
+			editor.plugin.findPlugin<TableOptions>('table')?.options;
+		if (options?.cardToolbars) {
+			return options.cardToolbars(getItems(), this.editor);
 		}
-		return toolbars;
+		return getItems();
 	}
 
 	onSelectLeft(event: KeyboardEvent) {
@@ -524,6 +564,7 @@ class TableComponent<V extends TableValue = TableValue>
 	updateAlign(event: MouseEvent, align: 'top' | 'middle' | 'bottom' = 'top') {
 		event.preventDefault();
 		this.conltrollBar.setAlign(align);
+		this.onChange('local');
 		this.updateAlignText(align);
 	}
 
@@ -539,18 +580,19 @@ class TableComponent<V extends TableValue = TableValue>
 		if (!tableRoot) return value;
 		const { tableModel } = this.selection;
 		if (!tableModel) return value;
-		const { schema, conversion } = this.editor;
+		const editor = this.editor;
+		const { schema, conversion } = editor;
 		const container = $('<div></div>');
 		container.append(tableRoot.clone(true));
-		const parser = new Parser(container, this.editor, (node) => {
+		const parser = new Parser(container, editor, (node) => {
 			node.find(Template.TABLE_TD_BG_CLASS).remove();
 			node.find(EDITABLE_SELECTOR).each((root) => {
-				this.editor.node.unwrap($(root));
+				editor.node.unwrap($(root));
 			});
 		});
 		const { rows, cols, height, width } = tableModel;
 		const html = parser.toValue(schema, conversion, false, false);
-		if (!isEngine(this.editor)) return { ...value, html };
+		if (!isEngine(editor)) return { ...value, html };
 		return {
 			...value,
 			rows,
@@ -561,67 +603,47 @@ class TableComponent<V extends TableValue = TableValue>
 		} as V;
 	}
 
-	updateBackgroundSelection?(range: RangeInterface): void {
-		const { selectArea, tableModel } = this.selection;
-		if (selectArea && selectArea.count > 1 && tableModel) {
-			const { begin, end } = selectArea;
-			const startModel = tableModel.table[begin.row][begin.col];
-			if (
-				!this.helper.isEmptyModelCol(startModel) &&
-				startModel.element
-			) {
-				range.setStart(startModel.element, 0);
-			}
-			const endModel = tableModel.table[end.row][end.col];
-			if (!this.helper.isEmptyModelCol(endModel) && endModel.element) {
-				range.setEnd(endModel.element, 0);
-			}
-		}
-	}
-
 	drawBackground?(
 		node: NodeInterface,
 		range: RangeInterface,
 	): DOMRect | void | false | RangeInterface[] {
 		const backgroundRect = node.get<HTMLElement>()!.getBoundingClientRect();
 		const domRect = new DOMRect(backgroundRect.x, backgroundRect.y, 0, 0);
-		const { startNode, endNode } = range;
-		const startElement = startNode.closest('td');
-		const endElement = endNode.closest('td');
+		const { startContainer, endContainer } = range;
+		const startElement = closest(startContainer, 'td');
+		const endElement = closest(endContainer, 'td');
 		if (
-			startElement.name !== 'td' ||
-			endElement.name !== 'td' ||
-			startElement.equal(endElement)
+			!(startElement instanceof Element) ||
+			!(endElement instanceof Element) ||
+			startElement.nodeName !== 'TD' ||
+			endElement?.nodeName !== 'TD' ||
+			startElement === endElement
 		)
 			return;
 
-		const startRect = startElement
-			.get<HTMLElement>()!
-			.getBoundingClientRect();
-		const vLeft =
-			(this.viewport?.getBoundingClientRect()?.left || 0) +
-			(this.activated ? 13 : 0);
+		const startRect = startElement.getBoundingClientRect();
+		const endRect = endElement.getBoundingClientRect();
+		const viewportRect = this.viewport?.getBoundingClientRect();
+		const vLeft = (viewportRect?.left || 0) + (this.activated ? 13 : 0);
 		domRect.x = Math.max(
 			startRect.left - backgroundRect.left,
 			vLeft - (this.editor.root.getBoundingClientRect()?.left || 0),
 		);
 		domRect.y = startRect.top - backgroundRect.top;
-		domRect.width = startRect.right - startRect.left;
+		domRect.width =
+			(viewportRect
+				? Math.min(endRect.right, viewportRect.right)
+				: endRect.right) - startRect.left;
 		domRect.height = startRect.bottom - startRect.top;
-
-		const rect = endElement.get<HTMLElement>()!.getBoundingClientRect();
-		domRect.width = Math.min(
-			rect.right - (startRect.left < vLeft ? vLeft : startRect.left),
-			(this.viewport?.width() || 0) - (this.activated ? 13 : 0),
-		);
 		if (domRect.width < 0) domRect.width = 0;
-		domRect.height = rect.bottom - startRect.top;
+		domRect.height = endRect.bottom - startRect.top;
 		return domRect;
 	}
 
 	activate(activated: boolean) {
 		super.activate(activated);
 		if (activated) {
+			this.conltrollBar.refresh();
 			this.wrapper?.addClass('active');
 		} else {
 			this.selection.clearSelect();
@@ -632,25 +654,23 @@ class TableComponent<V extends TableValue = TableValue>
 	}
 
 	handleChange = (trigger: 'remote' | 'local' = 'local') => {
-		if (!isEngine(this.editor)) return;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		this.conltrollBar.refresh();
 		this.selection.render('change');
 		const oldValue = super.getValue();
 		if (oldValue?.noBorder) {
 			this.noBorderToolButton?.addClass('active');
 		} else this.noBorderToolButton?.removeClass('active');
-		if (trigger === 'local' && isEngine(this.editor)) {
+		if (trigger === 'local' && isEngine(editor)) {
 			const value = this.getValue();
 			if (value) this.setValue(value);
 		}
 	};
 
 	onChange = (trigger: 'remote' | 'local' = 'local') => {
-		if (
-			isEngine(this.editor) &&
-			trigger === 'local' &&
-			this.editor.ot.isStopped()
-		)
+		const editor = this.editor;
+		if (isEngine(editor) && trigger === 'local' && editor.ot.isStopped())
 			return;
 		if (this.#changeTimeout) clearTimeout(this.#changeTimeout);
 		this.#changeTimeout = setTimeout(() => {
@@ -664,11 +684,16 @@ class TableComponent<V extends TableValue = TableValue>
 	maximize() {
 		super.maximize();
 		this.scrollbar?.refresh();
+		const { editor } = this;
+		if (isEngine(editor) && !isMobile) {
+			this.getCenter().on('scroll', this.updateScrollbar);
+		}
 	}
 
 	minimize() {
 		super.minimize();
 		this.scrollbar?.refresh();
+		this.getCenter().off('scroll', this.updateScrollbar);
 	}
 
 	getSelectionNodes() {
@@ -713,104 +738,109 @@ class TableComponent<V extends TableValue = TableValue>
 		});
 	};
 
-	isChanged: boolean = false;
+	initScrollbar() {
+		if (!this.viewport) return;
+		const editor = this.editor;
+		const tablePlugin = editor.plugin.findPlugin<TableOptions>('table');
+		const tableOptions = tablePlugin?.options.overflow || {};
+		const overflowLeftConfig = tableOptions.maxLeftWidth
+			? {
+					onScrollX: (x: number) => {
+						if (this.isMaximize) x = 0;
+						const max = tableOptions.maxLeftWidth!();
+						this.wrapper?.css(
+							'margin-left',
+							`-${x > max ? max : x}px`,
+						);
+						if (x > 0) {
+							editor.root.find('.data-card-dnd').hide();
+						} else {
+							editor.root.find('.data-card-dnd').show();
+						}
+						return x - max;
+					},
+					getScrollLeft: (left: number) => {
+						return (
+							left -
+							removeUnit(this.wrapper?.css('margin-left') || '0')
+						);
+					},
+					getOffsetWidth: (width: number) => {
+						return (
+							width +
+							removeUnit(this.wrapper?.css('margin-left') || '0')
+						);
+					},
+			  }
+			: undefined;
+		this.scrollbar = new Scrollbar(
+			this.viewport,
+			true,
+			false,
+			true,
+			overflowLeftConfig,
+		);
+		this.scrollbar.setContentNode(this.viewport.find('.data-table')!);
+		this.scrollbar.on('display', (display: 'node' | 'block') => {
+			if (display === 'block') {
+				this.wrapper?.addClass('scrollbar-show');
+			} else {
+				this.wrapper?.removeClass('scrollbar-show');
+			}
+		});
+		//this.scrollbar.disableScroll();
+		let prevScrollData = {
+			x: 0,
+			y: 0,
+		};
+		const handleScrollbarChange = ({ x, y }: Record<string, number>) => {
+			if (tableOptions['maxRightWidth'])
+				this.overflow(tableOptions['maxRightWidth']());
+			if (prevScrollData.x === x && prevScrollData.y === y) return;
+			prevScrollData = {
+				x,
+				y,
+			};
+
+			if (isEngine(editor)) {
+				editor.trigger('scroll', this.root, { x, y });
+				this.conltrollBar.refresh();
+			}
+		};
+		this.scrollbar.on('change', handleScrollbarChange);
+		if (!isMobile) window.addEventListener('scroll', this.updateScrollbar);
+		window.addEventListener('resize', this.updateScrollbar);
+		if (isEngine(editor) && !isMobile) {
+			editor.scrollNode?.on('scroll', this.updateScrollbar);
+		}
+	}
 
 	didRender() {
 		super.didRender();
-		this.viewport = isEngine(this.editor)
+		const editor = this.editor;
+		editor.on('undo', this.doChange);
+		editor.on('redo', this.doChange);
+		this.viewport = isEngine(editor)
 			? this.wrapper?.find(Template.VIEWPORT)
 			: this.wrapper?.find(Template.VIEWPORT_READER);
 
 		this.selection.init();
 		this.conltrollBar.init();
 		this.command.init();
-		if (!isEngine(this.editor) || this.editor.readonly)
+		if (!isEngine(editor) || editor.readonly)
 			this.toolbarModel?.setOffset([0, 0]);
-		else this.toolbarModel?.setOffset([0, -28, 0, -6]);
-		const tablePlugin = this.editor.plugin.components['table'];
-		const tableOptions = tablePlugin?.options['overflow'] || {};
+		else this.toolbarModel?.setOffset([13, -28, 0, -6]);
+		const tablePlugin = editor.plugin.findPlugin<TableOptions>('table');
+		const tableOptions = tablePlugin?.options.overflow || {};
 		if (this.viewport) {
 			this.selection.refreshModel();
-			const overflowLeftConfig = tableOptions['maxLeftWidth']
-				? {
-						onScrollX: (x: number) => {
-							if (this.isMaximize) x = 0;
-							const max = tableOptions['maxLeftWidth']();
-							this.wrapper?.css(
-								'margin-left',
-								`-${x > max ? max : x}px`,
-							);
-							if (x > 0) {
-								this.editor.root.find('.data-card-dnd').hide();
-							} else {
-								this.editor.root.find('.data-card-dnd').show();
-							}
-							return x - max;
-						},
-						getScrollLeft: (left: number) => {
-							return (
-								left -
-								removeUnit(
-									this.wrapper?.css('margin-left') || '0',
-								)
-							);
-						},
-						getOffsetWidth: (width: number) => {
-							return (
-								width +
-								removeUnit(
-									this.wrapper?.css('margin-left') || '0',
-								)
-							);
-						},
-				  }
-				: undefined;
-			this.scrollbar = new Scrollbar(
-				this.viewport,
-				true,
-				false,
-				true,
-				overflowLeftConfig,
-			);
-			this.scrollbar.setContentNode(this.viewport.find('.data-table')!);
-			this.scrollbar.on('display', (display: 'node' | 'block') => {
-				if (display === 'block') {
-					this.wrapper?.addClass('scrollbar-show');
-				} else {
-					this.wrapper?.removeClass('scrollbar-show');
-				}
-			});
-			//this.scrollbar.disableScroll();
-			let scrollbarTimeout: NodeJS.Timeout | null = null;
-			const handleScrollbarChange = () => {
-				if (tableOptions['maxRightWidth'])
-					this.overflow(tableOptions['maxRightWidth']());
-				if (scrollbarTimeout) clearTimeout(scrollbarTimeout);
-				scrollbarTimeout = setTimeout(() => {
-					if (isEngine(this.editor)) {
-						this.editor.ot.initSelection(false);
-						this.conltrollBar.refresh();
-					}
-				}, 20);
-			};
-			this.scrollbar.on('change', handleScrollbarChange);
-			if (!isMobile)
-				window.addEventListener('scroll', this.updateScrollbar);
-			window.addEventListener('resize', this.updateScrollbar);
-			if (isEngine(this.editor) && !isMobile) {
-				this.editor.scrollNode?.on('scroll', this.updateScrollbar);
-			}
+			setTimeout(() => {
+				this.initScrollbar();
+			}, 0);
 		}
 		this.selection.on('select', () => {
-			this.conltrollBar.refresh();
-			setTimeout(() => {
-				this.isChanged = true;
-			}, 200);
-			if (!isEngine(this.editor)) return;
-			const { selectArea, tableModel } = this.selection;
-			if (selectArea && selectArea.count > 1 && tableModel) {
-				this.editor.ot.updateSelection();
-			}
+			this.conltrollBar.refresh(false);
+			if (!isEngine(editor)) return;
 			const align = this.selection.getSingleCell()?.css('vertical-align');
 			this.updateAlignText(align as any);
 			this.toolbarModel?.update();
@@ -823,23 +853,23 @@ class TableComponent<V extends TableValue = TableValue>
 		});
 		this.conltrollBar.on('sizeChanging', () => {
 			this.scrollbar?.refresh();
-			this.editor.trigger('editor:resize');
+			editor.trigger('editor:resize');
 			this.updateScrollbar();
 		});
 		this.command.on('actioned', (action, silence) => {
 			if (action === 'paste') {
-				this.editor.card.render(this.wrapper);
+				editor.card.render(this.wrapper);
 			}
 			if (['splitCell', 'mergeCell'].includes(action)) {
-				this.editor.trigger('editor:resize');
+				editor.trigger('editor:resize');
 			}
 			this.selection.render(action);
 			this.toolbarModel?.update();
 			if (!silence) {
 				this.onChange();
 			}
-			if (tableOptions['maxRightWidth'])
-				this.overflow(tableOptions['maxRightWidth']());
+			if (tableOptions.maxRightWidth)
+				this.overflow(tableOptions.maxRightWidth());
 			this.scrollbar?.refresh();
 		});
 
@@ -848,13 +878,13 @@ class TableComponent<V extends TableValue = TableValue>
 		const value = super.getValue();
 		if (!value?.html) {
 			const tableValue = this.getValue();
-			if (tableValue && isEngine(this.editor)) this.setValue(tableValue);
+			if (tableValue && isEngine(editor)) this.setValue(tableValue);
 			this.onChange();
 		}
-		if (tableOptions['maxRightWidth'])
-			this.overflow(tableOptions['maxRightWidth']());
-		this.scrollbar?.refresh();
+		if (tableOptions.maxRightWidth)
+			this.overflow(tableOptions.maxRightWidth());
 	}
+	private remoteRefreshTimeout: NodeJS.Timeout | null = null;
 
 	remoteRefresh() {
 		if (
@@ -872,7 +902,7 @@ class TableComponent<V extends TableValue = TableValue>
 			colsHeader.append(
 				$(
 					this.template.renderColsHeader(superValue.cols - colCount),
-				).children(),
+				).find(Template.COLS_HEADER_ITEM_CLASS),
 			);
 			colItems = colsHeader.find(Template.COLS_HEADER_ITEM_CLASS);
 		} else if (superValue.cols < colCount) {
@@ -885,8 +915,14 @@ class TableComponent<V extends TableValue = TableValue>
 			: this.wrapper.find('table');
 		const colElements = table.find('col').toArray();
 		colElements.forEach((colElement, index) => {
-			const width = colElement.attributes('width');
-			colItems.eq(index)?.css('width', `${width}px`);
+			const width =
+				colElement.attributes('width') || colElement.css('width');
+			colItems
+				.eq(index)
+				?.css(
+					'width',
+					`${Math.max(parseInt(width), this.colMinWidth)}px`,
+				);
 		});
 
 		const rowsHeader = this.wrapper.find(Template.ROWS_HEADER_CLASS);
@@ -896,7 +932,7 @@ class TableComponent<V extends TableValue = TableValue>
 			rowsHeader.append(
 				$(
 					this.template.renderRowsHeader(superValue.rows - rowCount),
-				).children(),
+				).find(Template.ROWS_HEADER_ITEM_CLASS),
 			);
 			rowItems = rowsHeader.find(Template.ROWS_HEADER_ITEM_CLASS);
 		} else if (superValue.rows < rowCount) {
@@ -910,20 +946,22 @@ class TableComponent<V extends TableValue = TableValue>
 				.eq(index)
 				?.css(
 					'height',
-					removeUnit(
-						getComputedStyle(rowElement.get<Element>()!, 'height'),
+					Math.max(
+						parseInt(rowElement.css('width')),
+						this.rowMinHeight,
 					),
 				);
 		});
-		this.conltrollBar.refresh();
+		// this.conltrollBar.refresh();
 		this.scrollbar?.refresh();
-		setTimeout(() => {
+		if (this.remoteRefreshTimeout) clearTimeout(this.remoteRefreshTimeout);
+		this.remoteRefreshTimeout = setTimeout(() => {
 			// 找到所有可编辑节点，对没有 contenteditable 属性的节点添加contenteditable一下
 			this.wrapper?.find(EDITABLE_SELECTOR).each((editableNode) => {
 				const editableElement = editableNode as Element;
-				if (!editableElement.hasAttribute('contenteditable')) {
+				if (!editableElement.hasAttribute(DATA_CONTENTEDITABLE_KEY)) {
 					editableElement.setAttribute(
-						'contenteditable',
+						DATA_CONTENTEDITABLE_KEY,
 						this.template.isReadonly ? 'false' : 'true',
 					);
 				}
@@ -932,8 +970,8 @@ class TableComponent<V extends TableValue = TableValue>
 	}
 
 	render() {
-		this.template.isReadonly =
-			!isEngine(this.editor) || this.editor.readonly;
+		const editor = this.editor;
+		this.template.isReadonly = !isEngine(editor) || editor.readonly;
 		// 重新渲染
 		if (
 			this.wrapper &&
@@ -962,15 +1000,15 @@ class TableComponent<V extends TableValue = TableValue>
 			value.cols = model.cols;
 		}
 		//渲染卡片
-		this.wrapper = isEngine(this.editor)
+		this.wrapper = isEngine(editor)
 			? $(
 					this.template.htmlEdit(
 						value,
-						menuData(this.editor.language.get('table')),
+						menuData(editor.language.get('table')),
 					),
 			  )
 			: $(this.template.htmlView(value));
-		if (!isEngine(this.editor)) {
+		if (!isEngine(editor)) {
 			this.wrapper
 				.find('table')
 				.addClass('data-table')
@@ -984,14 +1022,20 @@ class TableComponent<V extends TableValue = TableValue>
 
 	destroy() {
 		super.destroy();
+		const editor = this.editor;
+		window.removeEventListener('scroll', this.updateScrollbar);
+		window.removeEventListener('resize', this.updateScrollbar);
+		editor.scrollNode?.off('scroll', this.updateScrollbar);
 		this.scrollbar?.destroy();
 		this.command.removeAllListeners();
-		this.selection.removeAllListeners();
-		this.selection.destroy();
-		this.conltrollBar.removeAllListeners();
-		this.conltrollBar.destroy();
-		this.editor.off('undo', this.doChange);
-		this.editor.off('redo', this.doChange);
+		const selection = this.selection;
+		selection.removeAllListeners();
+		selection.destroy();
+		const bar = this.conltrollBar;
+		bar.removeAllListeners();
+		bar.destroy();
+		editor.off('undo', this.doChange);
+		editor.off('redo', this.doChange);
 	}
 }
 

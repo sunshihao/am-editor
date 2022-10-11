@@ -1,6 +1,10 @@
 import tinycolor2 from 'tinycolor2';
-import { MarkInterface, NodeInterface, SchemaInterface } from '../types';
-import { READY_CARD_KEY, READY_CARD_SELECTOR } from '../constants/card';
+import type { MarkInterface, NodeInterface, SchemaInterface } from '../types';
+import {
+	READY_CARD_KEY,
+	READY_CARD_SELECTOR,
+	CARD_KEY,
+} from '../constants/card';
 import Parser from '../parser';
 import { EngineInterface } from '../types/engine';
 import { $ } from '../node';
@@ -25,21 +29,20 @@ export default class Paste {
 		return parser.toDOM(this.schema, conversion);
 	}
 
-	getDefaultStyle() {
+	getDefaultStyle(container = this.engine.container) {
 		const defaultStyle = {
-			color: tinycolor2(this.engine.container.css('color')).toHexString(),
+			color: tinycolor2(container.css('color')).toHexString(),
 			'background-color': tinycolor2(
-				this.engine.container.css('background-color'),
+				container.css('background-color'),
 			).toHexString(),
-			'font-size': this.engine.container.css('font-size'),
+			'font-size': container.css('font-size'),
 		};
 		return defaultStyle;
 	}
 
 	elementNormalize(fragment: DocumentFragment) {
 		const defaultStyle = this.getDefaultStyle();
-		const defautlStyleKeys = Object.keys(defaultStyle);
-		const { inline } = this.engine;
+		const { inline, list } = this.engine;
 		const nodeApi = this.engine.node;
 		const markApi = this.engine.mark;
 		const blockApi = this.engine.block;
@@ -80,24 +83,75 @@ export default class Paste {
 							text = text.replace(/\u200b/g, '');
 							node.text(text);
 						}
+					} else if (/^\n(\t)+$/.test(text)) {
+						node.remove();
+						if (parent.get<Element>()?.childNodes.length === 0)
+							parent.remove();
+						return;
+					} else if (/^\n$/.test(text)) {
+						if (nodeApi.isList(parent)) {
+							node.remove();
+							return;
+						}
+						const next = node.next();
+						if (next && nodeApi.isBlock(next)) node.remove();
+					}
+					if (nodeApi.isList(parent)) {
+						const next = node.next();
+						const prev = node.prev();
+						const addCardToCustomize = (
+							node: NodeInterface,
+							target: NodeInterface,
+						) => {
+							if (nodeApi.isCustomize(node)) {
+								const first = node.first();
+								if (first && first.isCard()) {
+									const cardName =
+										first.attributes(CARD_KEY) ||
+										first.attributes(READY_CARD_KEY);
+									if (cardName)
+										list.addCardToCustomize(
+											target,
+											cardName,
+										);
+								}
+							}
+						};
+						let cloneLi = null;
+						if (next?.name === 'li') {
+							cloneLi = next.clone();
+							addCardToCustomize(next, cloneLi);
+						} else if (prev?.name === 'li') {
+							cloneLi = prev.clone();
+							addCardToCustomize(prev, cloneLi);
+						} else {
+							cloneLi = $(`<li></li>`);
+						}
+						node.before(cloneLi);
+						cloneLi.append(node);
+						return cloneLi;
 					}
 					return undefined;
 				}
 				const styles = node.css();
-				defautlStyleKeys.forEach((key) => {
-					const value = styles[key];
-					if (!value) return;
+				for (const key in defaultStyle) {
+					let value = styles[key];
+					if (!value) continue;
+					if (key.endsWith('color')) {
+						value = tinycolor2(value).toHexString();
+					}
 					if (
 						value.toLowerCase() === defaultStyle[key].toLowerCase()
 					) {
 						node.css(key, '');
 					}
-				});
+				}
 				//处理后如果不是一个有效的节点就移除包裹
 				let type = this.schema.getType(node);
 				if (!type) {
+					const first = node.first();
 					nodeApi.unwrap(node);
-					return undefined;
+					return first;
 				}
 				nodeApi.removeMinusStyle(node, 'text-indent');
 				if (nodeApi.isList(node)) {
@@ -107,14 +161,10 @@ export default class Paste {
 				let attributes: { [k: string]: string } | undefined =
 					node.attributes();
 				// 删除空 style 属性
-				if ((attributes.style || '').trim() === '') {
+				if (attributes.style && attributes.style.trim() === '') {
 					node.removeAttributes('style');
 				}
 
-				// br 换行改成正常段落
-				if (type === 'block') {
-					this.engine.block.brToBlock(node);
-				}
 				// 删除空 span
 				while (node.name === 'span' && nodeApi.isEmpty(node)) {
 					const children = node.children();
@@ -180,7 +230,9 @@ export default class Paste {
 					const rootChildren = parent.children().toArray();
 					let tempList = parent.clone();
 					const appendToTemp = () => {
-						if (tempList.children().length > 0) {
+						if (
+							(tempList.get<Node>()?.childNodes.length ?? 0) > 0
+						) {
 							if (isLeft) leftList.push(tempList);
 							else rightList.push(tempList);
 							tempList = parent!.clone();
@@ -195,7 +247,7 @@ export default class Paste {
 					 */
 					rootChildren.forEach((child, index) => {
 						if (!child) return;
-						if (child.equal(node)) {
+						if (isLeft && child.equal(node)) {
 							// 最后一个位置加入到右边
 							if (rootChildren.length - 1 === index) {
 								appendToTemp();
@@ -221,19 +273,27 @@ export default class Paste {
 						else rightList.push(child);
 					});
 					appendToTemp();
-					const indent = parent.attributes('data-indent') || '0';
-					node.attributes('data-indent', indent);
-					this.engine.list.addIndent(node, 1);
+					const indent = parent.attributes(list.INDENT_KEY) || '0';
+					node.attributes(list.INDENT_KEY, indent);
+					list.addIndent(node, 1);
 					let prev = parent;
 					leftList.forEach((childNode) => {
 						const child = $(childNode);
-						if (!child || child.children().length === 0) return;
+						if (
+							!child ||
+							child.get<Node>()?.childNodes.length === 0
+						)
+							return;
 						prev.after(child);
 						prev = child;
 					});
 					rightList.forEach((childNode) => {
 						const child = $(childNode);
-						if (!child || child.children().length === 0) return;
+						if (
+							!child ||
+							child.get<Element>()?.childNodes.length === 0
+						)
+							return;
 						prev.after(child);
 						prev = child;
 					});
@@ -242,6 +302,10 @@ export default class Paste {
 				}
 				// 补齐 li
 				if (node.name !== 'li' && parentIsList) {
+					if (node.name === 'br') {
+						node.remove();
+						return undefined;
+					}
 					const li = $('<li />');
 					node.before(li);
 					li.append(node);
@@ -275,7 +339,7 @@ export default class Paste {
 
 					rootChildren.forEach((child) => {
 						if (!child) return;
-						if (child.equal(parent!)) {
+						if (isLeft && child.equal(parent!)) {
 							isLeft = false;
 							return;
 						}
@@ -290,23 +354,33 @@ export default class Paste {
 					let next: NodeInterface | null = null;
 					children.each((child, index) => {
 						const node = children.eq(index);
-						if (!node || nodeApi.isEmptyWithTrim(node)) {
+						if (
+							!node ||
+							(nodeApi.isEmptyWithTrim(node) &&
+								!nodeApi.isVoid(node))
+						) {
 							return;
 						}
 						const isList = nodeApi.isList(node);
 						const leftLast = leftList[leftList.length - 1];
 						if (isList) {
 							const indent =
-								$(leftLast)?.attributes('data-indent') || '0';
-							node.attributes('data-indent', indent);
-							this.engine.list.addIndent(node, 1);
+								$(leftLast)?.attributes(list.INDENT_KEY) || '0';
+							node.attributes(list.INDENT_KEY, indent);
+							list.addIndent(node, 1);
 							leftList[leftList.length] = node[0];
+							li = null;
+							return;
+						} else if (nodeApi.isBlock(child, this.schema)) {
+							const len = leftList.length;
+							leftList[len] = node[0];
+							leftList[len + 1] = leftList.clone()[0];
 							li = null;
 							return;
 						}
 						if (!li) {
 							li = isCustomizeList
-								? $('<li class="data-list-item" />')
+								? $(`<li class="${list.CUSTOMZIE_LI_CLASS}" />`)
 								: $('<li />');
 							const last = $(leftLast)?.last();
 							if (last) last?.after(li);
@@ -321,13 +395,21 @@ export default class Paste {
 					let prev = rootListElement;
 					leftList.each((childNode) => {
 						const child = $(childNode);
-						if (!child || child.children().length === 0) return;
+						if (
+							!child ||
+							child.get<Node>()?.childNodes.length === 0
+						)
+							return;
 						prev.after(child);
 						prev = child;
 					});
 					rightList.each((childNode) => {
 						const child = $(childNode);
-						if (!child || child.children().length === 0) return;
+						if (
+							!child ||
+							child.get<Node>()?.childNodes.length === 0
+						)
+							return;
 						prev.after(child);
 						prev = child;
 					});
@@ -361,16 +443,54 @@ export default class Paste {
 				// <li><p>foo</p></li>
 				if (nodeIsBlock && parent?.name === 'li') {
 					// <li><p><br /></p></li>
-					if (
-						node.children().length === 1 &&
-						node.first()?.name === 'br'
-					) {
-						// nothing
+					const childNodes = node.get<Node>()?.childNodes ?? [];
+
+					if (node.name === 'p') {
+						const next = node.next();
+						if (childNodes.length === 0 && !next) {
+							node.append('<br />');
+						}
+						const first = node.first();
+						if (next && next.name === 'p') {
+							node.append('<br />');
+						}
+						nodeApi.unwrap(node);
+						return first;
 					} else {
-						node.after('<br />');
+						const pParent = parent.parent();
+						if (!pParent) return undefined;
+						const leftList = pParent.clone();
+						const rightList = pParent.clone();
+						let prev = parent.prev();
+						while (prev) {
+							leftList.prepend(prev);
+							prev = parent.prev();
+						}
+						let next = parent.next();
+						while (next) {
+							rightList.append(next);
+							next = parent.next();
+						}
+						const leftLi = parent.clone();
+						const rightLi = parent.clone();
+						let prevC = node.prev();
+						while (prevC) {
+							leftLi.prepend(prevC);
+							prevC = node.prev();
+						}
+						let nextC = node.next();
+						while (nextC) {
+							rightLi.append(nextC);
+							nextC = node.next();
+						}
+						pParent.after(node);
+						if (leftLi.first()) leftList.append(leftLi);
+						if (rightLi.first()) rightList.prepend(rightLi);
+						if (leftList.first()) pParent.before(leftList);
+						if (rightList.first()) node.after(rightList);
+						pParent.remove();
+						return undefined;
 					}
-					nodeApi.unwrap(node);
-					return undefined;
 				}
 				if (
 					!nodeIsBlock &&
@@ -446,10 +566,13 @@ export default class Paste {
 						const plugin = topMarkPlugins.find(
 							(item) =>
 								item.plugin?.name === markPlugin.name &&
-								item.node.length > 0,
+								item.node.length > 0 &&
+								!item.node.equal(node),
 						);
 						if (plugin) {
-							if (plugin.node.children().length === 1) {
+							if (
+								plugin.node.get<Node>()?.childNodes.length === 1
+							) {
 								nodeApi.unwrap(plugin.node);
 							} else {
 								nodeApi.unwrap(node);
@@ -469,7 +592,7 @@ export default class Paste {
 					const pMarkPlugin = markApi.findPlugin(nodeParent);
 					const cMarkPlugin =
 						currentMarkPlugins[currentMarkPlugins.length - 1]
-							.plugin;
+							?.plugin;
 					if (
 						pMarkPlugin &&
 						cMarkPlugin &&
@@ -533,7 +656,7 @@ export default class Paste {
 		);
 	}
 
-	normalize(autoAppendCurrent: boolean = true) {
+	normalize(forceGenerateAllId = true) {
 		const nodeApi = this.engine.node;
 		let fragment = this.parser();
 		this.elementNormalize(fragment);
@@ -567,7 +690,8 @@ export default class Paste {
 		}
 
 		$(fragment).traverse((node) => {
-			if (node.fragment === fragment) return;
+			if (node.fragment === fragment) return undefined;
+			const first = node.get<Node>()?.firstChild;
 			if (node.length > 0 && node[0].parentNode)
 				this.engine.trigger('paste:each', node);
 			// 删除非block节点的换行 \r\n\r\n<span
@@ -603,33 +727,16 @@ export default class Paste {
 			) {
 				nodeApi.unwrap(node);
 			}
+			// 如果这个节点被移除了，直接遍历他的子节点
+			if (node.length === 0 && first) return $(first);
+			return undefined;
 		});
 		this.engine.trigger('paste:each-after', $(fragment));
 
 		const node = nodeApi.normalize($(fragment));
 		if (node.fragment) fragment = node.fragment;
 		fragment.normalize();
-		let fragmentNode = $(fragment);
-		const first = fragmentNode.first();
-		//如果光标在文本节点，并且父级节点不是根节点，移除粘贴数据的第一个节点块级节点，让其内容接在光标所在行
-		const cloneRange = range
-			.cloneRange()
-			.shrinkToElementNode()
-			.shrinkToTextNode();
-		const { startNode } = cloneRange;
-		if (
-			autoAppendCurrent &&
-			startNode.inEditor() &&
-			first &&
-			first.name === 'p' &&
-			!(first.length === 1 && first.first()?.name === 'br') &&
-			!nodeApi.isEmptyWidthChild(
-				range.cloneRange().enlargeToElementNode(true, true).startNode,
-			)
-		) {
-			nodeApi.unwrap(first);
-		}
-		fragmentNode = $(fragment);
+		const fragmentNode = $(fragment);
 		const children = fragmentNode.find('ul,ol');
 		children.each((_, index) => {
 			const child = children.eq(index);
@@ -637,7 +744,7 @@ export default class Paste {
 				this.engine.list.addStart(child);
 			}
 		});
-		this.engine.nodeId.generateAll($(fragment), true);
+		this.engine.nodeId.generateAll($(fragment), forceGenerateAllId);
 		return fragment;
 	}
 

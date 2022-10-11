@@ -1,6 +1,6 @@
 import { EventEmitter2 } from 'eventemitter2';
-import { Doc, Op, Path } from 'sharedb';
-import { Type } from 'sharedb/lib/sharedb';
+import { Doc, Op, Path, ShareDBSourceOptions } from 'sharedb';
+import { Callback, Type } from 'sharedb/lib/sharedb';
 import { CardInterface } from './card';
 import { NodeInterface } from './node';
 import { RangeInterface, RangePath } from './range';
@@ -22,6 +22,10 @@ export type Attribute = {
 	 * 是否激活
 	 */
 	active: boolean;
+	/**
+	 * 是否强制更新
+	 */
+	force?: boolean;
 };
 
 /**
@@ -66,41 +70,50 @@ export interface DocInterface<T = any> extends EventEmitter2 {
 	// 从文档中创建json0数据
 	create(): void;
 	// 把操作应用到文档
-	apply(ops: Op[]): void;
+	apply(ops: Op[], options: any, callback?: (err?: any) => void): void;
 	// 提交操作到協同作業
-	submitOp(ops: Op[]): void;
+	submitOp(
+		ops: Op[],
+		options?: ShareDBSourceOptions,
+		callback?: Callback,
+	): void;
 	// 注销
 	destroy(): void;
 }
 
-export interface SelectionInterface {
+export interface SelectionInterface extends EventEmitter2 {
 	/**
 	 * 当前光标路径
 	 */
 	currentRangePath?: { start: RangePath; end: RangePath };
 	/**
-	 * 获取所有协作者的光标路径
+	 * 触发选择改变
 	 */
-	getSelections(): Array<Attribute>;
+	emitSelectChange: (refreshBG?: boolean) => void;
 	/**
-	 * 设置所有的协作者的光标路径
-	 * @param data
-	 */
-	setSelections(data: Array<Attribute>): void;
-	/**
-	 * 移除一个协作者的光标
+	 * 设置当前用户id
 	 * @param uuid
 	 */
-	remove(uuid: string): void;
+	setCurrent(member: Member): void;
 	/**
-	 * 更新协作者选区
-	 * @param currentMember
-	 * @param members
+	 * 设置用户属性
+	 * @param attr
 	 */
-	updateSelections(
-		currentMember: Member,
-		members: Array<Member>,
-	): { data: Array<Attribute>; range: RangeInterface };
+	setAttribute(attr: Attribute, member: Member, refreshBG?: boolean): void;
+	/**
+	 * 移除用户属性
+	 * @param uuid
+	 */
+	removeAttirbute(uuid: string): void;
+	/**
+	 * 获取用户属性
+	 * @param uuid
+	 */
+	getAttribute(uuid: string): Attribute | undefined;
+
+	refreshAttributes(...members: Member[]): void;
+
+	destory(): void;
 }
 
 export type CursorRect = {
@@ -238,12 +251,7 @@ export interface RangeColoringInterface {
 	 * @param members
 	 * @param idDraw
 	 */
-	render(
-		data: Array<Attribute>,
-		members: Array<Member>,
-		idDraw: boolean,
-		showInfo?: boolean,
-	): void;
+	render(data: Attribute, members: Member, showInfo?: boolean): void;
 	/**
 	 * 销毁
 	 */
@@ -264,6 +272,7 @@ export type RemoteAttr = {
 export type TargetOp = Op & {
 	id?: string;
 	bi?: number;
+	nl?: boolean;
 };
 
 export type RepairOp = TargetOp & {
@@ -277,6 +286,10 @@ export interface MutationInterface extends EventEmitter2 {
 	 * 是否终止中
 	 */
 	isStopped: boolean;
+	/**
+	 * 是否在缓存中
+	 */
+	isCache: boolean;
 	/**
 	 * 设置文档对象 OT 文档对象，或自定义文档对象
 	 * @param doc 文档对象
@@ -312,6 +325,11 @@ export interface MutationInterface extends EventEmitter2 {
 	 * @param ops 操作
 	 */
 	onChange(ops: Op[]): void;
+	/**
+	 * 对比节点与当前文档对象的差异
+	 * @param root
+	 */
+	diff(root?: Element): Op[];
 }
 
 export interface ConsumerInterface {
@@ -426,18 +444,15 @@ export interface ConsumerInterface {
 	 * @param path
 	 */
 	setRangeByPath(path: { start: RangePath; end: RangePath }): void;
-	/**
-	 * 处理完操作后更新节点的 __index
-	 * @param ops
-	 * @param applyNodes
-	 */
-	handleIndex(ops: Op[], applyNodes: NodeInterface[]): void;
 }
 
 export interface OTInterface extends EventEmitter2 {
 	// 操作消费者
 	consumer: ConsumerInterface;
 	selection: SelectionInterface;
+	doc: DocInterface | Doc | null;
+	isRemote: boolean;
+	readonly isCache: boolean;
 	getColors(): string[];
 	setColors(colors: string[]): void;
 	/**
@@ -449,7 +464,11 @@ export interface OTInterface extends EventEmitter2 {
 	 * @param doc 文档对象
 	 * @param defaultValue 如果文档不存在，则使用 defaultValue 初始化默认值
 	 */
-	initRemote(doc: Doc, defaultValue?: string): void;
+	initRemote(
+		doc: Doc,
+		defaultValue?: string,
+		onSelectionChange?: (path: Attribute) => void,
+	): void;
 	/**
 	 * 处理操作改变
 	 * @param ops 操作集合
@@ -460,6 +479,11 @@ export interface OTInterface extends EventEmitter2 {
 	 * @param ops
 	 */
 	submitOps(ops: Op[]): void;
+	/**
+	 * 对比节点与当前文档对象的差异
+	 * @param root
+	 */
+	diff(root?: Element): Op[];
 	/**
 	 * 应用操作
 	 * @param ops
@@ -534,23 +558,7 @@ export interface OTInterface extends EventEmitter2 {
 	/**
 	 * 渲染用戶選區
 	 */
-	renderSelection(
-		attributes: Array<Attribute>,
-		isDraw?: boolean,
-		showInfo?: boolean,
-	): void;
-	/**
-	 * 更新用户选区
-	 */
-	updateSelection(): void;
-	/**
-	 * 更新选区位置
-	 */
-	updateSelectionPosition(): void;
-	/**
-	 * 实例化选区
-	 */
-	initSelection(showInfo?: boolean): void;
+	renderSelection(attributes: Attribute[] | Attribute): void;
 	/**
 	 * 销毁
 	 */

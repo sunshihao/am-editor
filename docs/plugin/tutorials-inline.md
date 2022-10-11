@@ -4,9 +4,7 @@ In-line node plugin
 
 Usually used in scenarios where the text is individually styled and cannot be nested
 
-For this type of plug-in, we need to inherit the `InlinePlugin` abstract class. The `InlinePlugin` abstract class extends some properties and methods on the basis of inheriting the `ElementPlugin` abstract class. So the plugin that inherits `InlinePlugin` also has all the attributes and methods of the `ElementPlugin` abstract class
-
-Because `InlinePlugin` has implemented `markdown` syntax processing, `execute`, `queryState` commands, so we can easily configure an Inline plugin
+For this type of plugin, we need to inherit the `InlinePlugin` abstract class. The `InlinePlugin` abstract class extends some properties and methods on the basis of inheriting the `ElementPlugin` abstract class. So the plugin that inherits `InlinePlugin` also has all the attributes and methods of the `ElementPlugin` abstract class
 
 ```ts
 import { InlinePlugin } from '@aomao/engine';
@@ -46,19 +44,6 @@ Label name, must
 
 The label name here is the same as the label name in the parent class `ElementPlugin`, except that the label name is one of the necessary attributes of the `InlinePlugin` plugin
 
-### `markdown`
-
-Markdown syntax, optional
-
-Type: `string`
-
-Because the grammar parsing of markdown has been implemented in the `InlinePlugin` plugin, we only need to pass in the markdown grammar of the plugin, for example:
-
-```ts
-//Inline code syntax
-readonly markdown = "`"
-```
-
 ## Method
 
 ### `init`
@@ -78,13 +63,13 @@ export default class extends InlinePlugin {
 
 ### `execute`
 
-Execute plug-in commands, optional
+Execute plugin commands, optional
 
 The `InlinePlugin` plugin has implemented the `execute` method, if you need to use it, you can override this method
 
 ### `queryState`
 
-Query plug-in status command, optional
+Query plugin status command, optional
 
 The `InlinePlugin` plugin has implemented the `queryState` method, if you need to use it, you can override this method
 
@@ -100,9 +85,9 @@ If you need to use it, you can override this method or use super.schema() to cal
 
 Whether to trigger the execution to add the current inline package, otherwise the package with the current inline label will be removed, optional
 
-By default, the `InlinePlugin` plugin will call `editor.command.queryState` to query the current plugin state (the node selected within the current cursor matches the node set by the current inline plugin) and the currently set `tagName` `style` `attributes` In comparison, if they are consistent, the effect of removing the current inline plug-in node will be executed, otherwise the effect of the current inline plug-in node will be added.
+By default, the `InlinePlugin` plugin will call `editor.command.queryState` to query the current plugin state (the node selected within the current cursor matches the node set by the current inline plugin) and the currently set `tagName` `style` `attributes` In comparison, if they are consistent, the effect of removing the current inline plugin node will be executed, otherwise the effect of the current inline plugin node will be added.
 
-If you implement the isTrigger method, you need to determine whether to cancel or add the effect of the current inline plug-in node.
+If you implement the isTrigger method, you need to determine whether to cancel or add the effect of the current inline plugin node.
 
 ```ts
 /**
@@ -110,35 +95,4 @@ If you implement the isTrigger method, you need to determine whether to cancel o
  * @param args is the parameter passed in when calling command.execute to execute the plugin
  */
 isTrigger?(...args: any): boolean;
-```
-
-### `triggerMarkdown`
-
-Parse `markdown` grammar, optional
-
-We can override this method when `InlinePlugin` fails to meet the requirements after the default parsing
-
-```ts
-/**
- * Parse markdown
- * @param event event
- * @param text markdown text
- * @param node trigger node
- */
-triggerMarkdown(event: KeyboardEvent, text: string, node: NodeInterface): void
-```
-
-### `pasteMarkdown`
-
-Batch parsing of `markdown` syntax when pasting
-
-We can override this method when `InlinePlugin` fails to meet the requirements after the default parsing
-
-If a `markdown` syntax is detected during pasting, it will be converted into plain text and then passed in. You need to replace all the `markdown` syntax texts currently in line with the current plug-in with inline tags
-
-```ts
-/**
- * @param node contains a text node with markdown syntax
- * */
-pasteMarkdown(node: NodeInterface): void
 ```

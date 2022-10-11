@@ -22,8 +22,8 @@ import {
 import Template from './template';
 
 class TableSelection extends EventEmitter2 implements TableSelectionInterface {
-	private editor: EditorInterface;
-	private table: TableInterface;
+	protected editor: EditorInterface;
+	protected table: TableInterface;
 
 	tableRoot?: NodeInterface;
 	colsHeader?: NodeInterface;
@@ -125,14 +125,24 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 							isLastCol = true;
 					}
 					if (isLastCol) {
-						cell.element.classList.add('table-last-column');
+						if (
+							!cell.element.classList.contains(
+								'table-last-column',
+							)
+						)
+							cell.element.classList.add('table-last-column');
 					} else {
-						cell.element.classList.remove('table-last-column');
+						if (
+							cell.element.classList.contains('table-last-column')
+						)
+							cell.element.classList.remove('table-last-column');
 					}
 					if (isLastRow) {
-						cell.element.classList.add('table-last-row');
+						if (!cell.element.classList.contains('table-last-row'))
+							cell.element.classList.add('table-last-row');
 					} else {
-						cell.element.classList.remove('table-last-row');
+						if (cell.element.classList.contains('table-last-row'))
+							cell.element.classList.remove('table-last-row');
 					}
 				}
 			});
@@ -143,7 +153,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		document.addEventListener('keydown', this.onShiftKeydown);
 		document.addEventListener('keyup', this.onShiftKeyup);
 		this.table.wrapper
-			?.on(isMobile ? 'touchstart' : 'mousedown', this.onTdMouseDown)
+			?.on('mousedown', this.onTdMouseDown)
 			.on('keydown', this.onKeydown);
 	}
 
@@ -151,7 +161,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		document.removeEventListener('keydown', this.onShiftKeydown);
 		document.removeEventListener('keyup', this.onShiftKeyup);
 		this.table.wrapper
-			?.off(isMobile ? 'touchstart' : 'mousedown', this.onTdMouseDown)
+			?.off('mousedown', this.onTdMouseDown)
 			.off('keydown', this.onKeydown);
 	}
 
@@ -193,7 +203,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		if (td.name !== 'td') return [-1, -1];
 		const row = td.parent()?.index();
 		if (row === undefined || row < 0) return [-1, -1];
-		const col = this.tableModel?.table[row].findIndex((cell) =>
+		const col = this.tableModel?.table[row]?.findIndex((cell) =>
 			td.equal(
 				(this.table.helper.isEmptyModelCol(cell)
 					? (this.tableModel?.table[cell.parent.row][
@@ -362,44 +372,95 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 			?.find('td[table-cell-selection]')
 			.removeAttributes('table-cell-selection');
 
-		const fBeginRow = beginRow;
-		const fEndRow = endRow;
-		const fBeginCol = beginCol;
-		const fEndCol = endCol;
-		for (let row = fBeginRow; row > -1 && row <= fEndRow; row++) {
-			for (let col = fBeginCol; col > -1 && col <= fEndCol; col++) {
-				const cell = this.tableModel.table[row][col];
-				if (!cell) continue;
-				if (this.table.helper.isEmptyModelCol(cell)) {
-					if (beginRow > cell.parent.row) beginRow = cell.parent.row;
-					if (beginCol >= cell.parent.col) beginCol = cell.parent.col;
-					const parent =
-						this.tableModel.table[cell.parent.row][cell.parent.col];
-					if (!this.table.helper.isEmptyModelCol(parent)) {
+		const calc = (): Record<
+			'beginCol' | 'beginRow' | 'endRow' | 'endCol',
+			number
+		> => {
+			if (!this.tableModel)
+				return {
+					beginCol,
+					beginRow,
+					endCol,
+					endRow,
+				};
+			for (let r = beginRow; r <= endRow; r++) {
+				const row = this.tableModel.table[r];
+				if (!row) continue;
+				for (let c = beginCol; c <= endCol; c++) {
+					const cell = row[c];
+					if (!cell) continue;
+					if (!this.table.helper.isEmptyModelCol(cell)) {
+						if (
+							c !== beginCol &&
+							cell.colSpan + c - 1 === beginCol
+						) {
+							beginCol = c;
+							return calc();
+						}
+						if (
+							r !== beginRow &&
+							cell.rowSpan + r - 1 === beginRow
+						) {
+							beginRow = r;
+							return calc();
+						}
+						if (cell.rowSpan > 1 && endRow < cell.rowSpan - 1 + r) {
+							endRow = cell.rowSpan - 1 + r;
+							return calc();
+						}
+						if (cell.colSpan > 1 && endCol < cell.colSpan - 1 + c) {
+							endCol = cell.colSpan - 1 + c;
+							return calc();
+						}
+					} else {
+						const parent =
+							this.tableModel.table[cell.parent.row][
+								cell.parent.col
+							];
+						if (this.table.helper.isEmptyModelCol(parent)) continue;
+						if (
+							parent.colSpan + cell.parent.col - 1 === beginCol &&
+							cell.parent.col < beginCol
+						) {
+							beginCol = cell.parent.col;
+							return calc();
+						}
+						if (
+							parent.rowSpan + cell.parent.row - 1 === beginRow &&
+							cell.parent.row < beginRow
+						) {
+							beginRow = cell.parent.row;
+							return calc();
+						}
 						if (
 							parent.rowSpan > 1 &&
 							endRow < parent.rowSpan - 1 + cell.parent.row
-						)
+						) {
 							endRow = parent.rowSpan - 1 + cell.parent.row;
+							return calc();
+						}
 						if (
 							parent.colSpan > 1 &&
 							endCol < parent.colSpan - 1 + cell.parent.col
-						)
+						) {
 							endCol = parent.colSpan - 1 + cell.parent.col;
-					}
-				} else if (!this.table.helper.isEmptyModelCol(cell)) {
-					if (cell.rowSpan > 1) {
-						if (endRow < cell.rowSpan - 1 + row)
-							endRow = cell.rowSpan - 1 + row;
-					}
-					if (cell.colSpan > 1) {
-						if (endCol < cell.colSpan - 1 + col)
-							endCol = cell.colSpan - 1 + col;
+							return calc();
+						}
 					}
 				}
 			}
-		}
-
+			return {
+				beginCol,
+				beginRow,
+				endCol,
+				endRow,
+			};
+		};
+		const result = calc();
+		beginRow = result.beginRow;
+		endRow = result.endRow;
+		beginCol = result.beginCol;
+		endCol = result.endCol;
 		let count = 0;
 		if (
 			beginRow >= 0 &&
@@ -409,8 +470,11 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		) {
 			for (let r = beginRow; r <= endRow; r++) {
 				for (let c = beginCol; c <= endCol; c++) {
-					const col = this.tableModel.table[r][c];
-					if (col && !this.table.helper.isEmptyModelCol(col)) {
+					const row = this.tableModel.table[r];
+					if (!row) continue;
+					const col = row[c];
+					if (!col) continue;
+					if (!this.table.helper.isEmptyModelCol(col)) {
 						if (!isSame && col.element) {
 							$(col.element).attributes(
 								'table-cell-selection',
@@ -461,8 +525,9 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	}
 
 	focusCell(cell: NodeInterface | Node, start: boolean = false) {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		if (isNode(cell)) cell = $(cell);
 		const range = change.range.get();
 		const editableElement = cell.find(EDITABLE_SELECTOR);
@@ -482,8 +547,9 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	}
 
 	selectCellRange(cell: NodeInterface | Node) {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		if (isNode(cell)) cell = $(cell);
 		const range = change.range.get();
 		const editableElement = cell.find(EDITABLE_SELECTOR);
@@ -505,11 +571,12 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 
 	onTdMouseDown = (event: MouseEvent | TouchEvent) => {
 		this.selectRange = undefined;
-		if (!event.target || !isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!event.target || !isEngine(editor)) return;
+		const { change } = editor;
 		const target = $(event.target);
 		const td = target.closest('td');
-		if (td.length === 0) return;
+		if (td.length === 0 || !td.inEditor()) return;
 		const range = change.range.get();
 		const [row, col] = this.getCellPoint(td);
 		const isSelection = !!td.attributes('table-cell-selection');
@@ -557,6 +624,15 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		} else if (target.name === 'td') {
 			event.preventDefault();
 		}
+		const next = () => {
+			this.select({ row, col }, { row, col });
+			this.dragging = {
+				trigger: {
+					element: td,
+				},
+			};
+			this.addDragEvent();
+		};
 		// 右键不触发拖选
 		if (event instanceof MouseEvent && event.button === 2) {
 			if (!!target.attributes('table-cell-selection')) {
@@ -570,7 +646,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 				const block = editableElement.last();
 				if (block) {
 					// 不是块级卡片不处理
-					if (!block.isBlockCard()) return;
+					if (!block.isBlockCard()) return next();
 					//节点不可见不处理
 					if (
 						(block.get<HTMLElement>()?.offsetTop || 0) +
@@ -578,37 +654,41 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 						(event instanceof MouseEvent ? event : event.touches[0])
 							.clientY
 					)
-						return;
+						return next();
 					const node = $('<p><br /></p>');
 					editableElement.append(node);
-					const range = this.editor.change.range.get();
+					const range = editor.change.range.get();
 					range.select(node, true).collapse(false);
-					this.editor.change.apply(range);
+					editor.change.apply(range);
 				}
 			}
 		}
-		this.select({ row, col }, { row, col });
-		this.dragging = {
-			trigger: {
-				element: td,
-			},
-		};
-		this.addDragEvent();
+		next();
 	};
 
 	addDragEvent() {
 		this.tableRoot?.addClass('drag-select');
-		this.table.wrapper
-			?.on(isMobile ? 'touchend' : 'mouseup', this.removeDragEvent)
-			.on(isMobile ? 'touchmove' : 'mousemove', this.onDragMove);
+		document.addEventListener(
+			isMobile ? 'touchend' : 'mouseup',
+			this.removeDragEvent,
+		);
+		document.addEventListener(
+			isMobile ? 'touchmove' : 'mousemove',
+			this.onDragMove,
+		);
 	}
 
 	removeDragEvent = () => {
 		this.tableRoot?.removeClass('drag-select');
 		this.table.wrapper?.removeClass('drag-selecting');
-		this.table.wrapper
-			?.off(isMobile ? 'touchend' : 'mouseup', this.removeDragEvent)
-			.off(isMobile ? 'touchmove' : 'mousemove', this.onDragMove);
+		document.removeEventListener(
+			isMobile ? 'touchend' : 'mouseup',
+			this.removeDragEvent,
+		);
+		document.removeEventListener(
+			isMobile ? 'touchmove' : 'mousemove',
+			this.onDragMove,
+		);
 		this.dragging = undefined;
 	};
 
@@ -617,6 +697,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		const dragoverTd = $(event.target).closest('td');
 		if (
 			dragoverTd.length === 0 ||
+			!dragoverTd.inEditor() ||
 			(this.prevOverTd && dragoverTd.equal(this.prevOverTd))
 		)
 			return;
@@ -641,7 +722,7 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 		if (!event.target || !this.tableModel || !isEngine(this.editor)) return;
 		//获取单元格节点
 		const td = $(event.target).closest('td');
-		if (td.length === 0) {
+		if (td.length === 0 || !td.inEditor()) {
 			return;
 		}
 		//获取单元格位置
@@ -692,13 +773,14 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	};
 
 	selectLeft(event: KeyboardEvent, td: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		//获取单元格位置
 		const [row, col] = this.getCellPoint(td);
 		if (row < 0 || col < 0) return;
 		const count = this.selectArea?.count || 0;
 		//查看当前光标是否处于单元格可编辑节点的开始位置
-		const range = this.editor.change.range.get();
+		const range = editor.change.range.get();
 		if (count === 0) {
 			if (this.selectRange && this.selectRange.type === 'right') {
 				if (range.endOffset !== this.selectRange.startOffset) {
@@ -742,14 +824,15 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	}
 
 	selectRigth(event: KeyboardEvent, td: NodeInterface) {
-		if (!isEngine(this.editor) || !this.tableModel) return;
+		const editor = this.editor;
+		if (!isEngine(editor) || !this.tableModel) return;
 		event.stopPropagation();
 		//获取单元格位置
 		const [row, col] = this.getCellPoint(td);
 		if (row < 0 || col < 0) return;
 		const count = this.selectArea?.count || 0;
 		//当前没有选择任何单元格的时候判断光标位置
-		const range = this.editor.change.range.get();
+		const range = editor.change.range.get();
 		if (count === 0) {
 			if (this.selectRange && this.selectRange.type === 'left') {
 				if (range.startOffset !== this.selectRange.endOffset) {
@@ -804,13 +887,14 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	}
 
 	selectUp(event: KeyboardEvent, td: NodeInterface) {
-		if (!isEngine(this.editor) || !this.tableModel) return;
+		const editor = this.editor;
+		if (!isEngine(editor) || !this.tableModel) return;
 		//获取单元格位置
 		const [row, col] = this.getCellPoint(td);
 		if (row < 0 || col < 0) return;
 		const count = this.selectArea?.count || 0;
 		//当前没有选择任何单元格的时候判断光标位置
-		const range = this.editor.change.range.get();
+		const range = editor.change.range.get();
 		if (count === 0) {
 			if (this.selectRange && this.selectRange.type === 'bottom') {
 				if (range.endOffset !== this.selectRange.startOffset) {
@@ -850,13 +934,14 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 	}
 
 	selectDown(event: KeyboardEvent, td: NodeInterface) {
-		if (!isEngine(this.editor) || !this.tableModel) return;
+		const editor = this.editor;
+		if (!isEngine(editor) || !this.tableModel) return;
 		//获取单元格位置
 		const [row, col] = this.getCellPoint(td);
 		if (row < 0 || col < 0) return;
 		const count = this.selectArea?.count || 0;
 		//当前没有选择任何单元格的时候判断光标位置
-		const range = this.editor.change.range.get();
+		const range = editor.change.range.get();
 		range.shrinkToElementNode();
 		if (count === 0) {
 			if (this.selectRange && this.selectRange.type === 'top') {
@@ -1014,9 +1099,9 @@ class TableSelection extends EventEmitter2 implements TableSelectionInterface {
 			trHtml.push(trElement.get<HTMLElement>()!.outerHTML);
 		}
 
-		return `<table style="width:${tableWidth}px">${colgroup}${trHtml.join(
+		return `<body><meta name="aomao" content="table" /><table style="width:${tableWidth}px">${colgroup}${trHtml.join(
 			'',
-		)}</table>`;
+		)}</table></body>`;
 	}
 
 	hasMergeCell() {

@@ -4,7 +4,7 @@ Block node plugin
 
 Usually used for block-level nodes on a single line, similar to titles, quotes
 
-For this type of plug-in, we need to inherit the `BlockPlugin` abstract class. The `BlockPlugin` abstract class extends some properties and methods on the basis of inheriting the `ElementPlugin` abstract class. So the plug-in that inherits `BlockPlugin` also has all the attributes and methods of the `ElementPlugin` abstract class
+For this type of plugin, we need to inherit the `BlockPlugin` abstract class. The `BlockPlugin` abstract class extends some properties and methods on the basis of inheriting the `ElementPlugin` abstract class. So the plugin that inherits `BlockPlugin` also has all the attributes and methods of the `ElementPlugin` abstract class
 
 ## Inheritance
 
@@ -46,7 +46,7 @@ readonly allowIn = ['blockquote','$root']
 
 ### `disableMark`
 
-Disabled mark plug-in style, the mark plug-in node style that cannot appear under the block node
+Disabled mark plugin style, the mark plugin node style that cannot appear under the block node
 
 Type: `Array<string>`
 
@@ -80,7 +80,7 @@ export default class extends BlockPlugin {
 
 ### `queryState`
 
-Query plug-in status command, optional
+Query plugin status command, optional
 
 ```ts
 queryState() {
@@ -92,14 +92,14 @@ queryState() {
     if (blocks.length === 0) {
         return'';
     }
-    //Check if there is a label name that contains the current plug-in settings. If there is an attribute style set, you also need to compare the attributes and styles
+    //Check if there is a label name that contains the current plugin settings. If there is an attribute style set, you also need to compare the attributes and styles
     return this.tagName.indexOf(blocks[0].name) >= 0? blocks[0].name:'';
 }
 ```
 
 ### `execute`
 
-Execute plug-in commands, need to be implemented
+Execute plugin commands, need to be implemented
 
 Example of adding a block tag:
 
@@ -135,20 +135,3 @@ Set the `schema` rule of this block plugin, optional
 The `BlockPlugin` plugin has implemented the `schema` method and will automatically set the rules according to the `tagName` `style` `attributes`.
 
 If you need to use it, you can override this method or use super.schema() to call this method again
-
-### `markdown`
-
-Parse `markdown` grammar, optional
-
-By default, after pressing the space, the engine will get the text characters in front of the space, and then call this method, we can find the `markdown` syntax of the text in the method
-
-```ts
-/**
- * Markdown processing
- * @param event event
- * @param text text
- * @param block block-level node
- * @param node trigger node
- */
-markdown?(event: KeyboardEvent, text: string, block: NodeInterface, node: NodeInterface): boolean | void;
-```

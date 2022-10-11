@@ -1,12 +1,11 @@
 import copyTo from 'copy-to-clipboard';
-import Parser from './parser';
 import { EditorInterface, EngineInterface, ClipboardInterface } from './types';
 import { RangeInterface } from './types/range';
 import { isEngine, isSafari } from './utils';
 import { $ } from './node';
 import Range from './range';
-import { NodeInterface } from './types';
-import { CARD_ELEMENT_KEY, CARD_KEY, DATA_ID } from './constants';
+import { DATA_ELEMENT, ROOT, VIEW_CLASS_NAME } from './constants';
+import Parser from './parser';
 
 export const isDragEvent = (
 	event: DragEvent | ClipboardEvent,
@@ -95,7 +94,23 @@ export default class Clipboard implements ClipboardInterface {
 
 	copy(data: Node | string, trigger: boolean = false) {
 		if (typeof data === 'string') {
-			return copyTo(data);
+			const isHtml = /<[^>]+>/g.test(data);
+			if (isHtml) {
+				copyTo(data, {
+					format: 'text/html',
+					onCopy: (clipboardData: any) => {
+						clipboardData.setData(
+							'text/plain',
+							new Parser(data, this.editor).toText(),
+						);
+					},
+				});
+			} else {
+				copyTo(data, {
+					format: 'text/plain',
+				});
+			}
+			return true;
 		}
 		const editor = this.editor;
 		const selection = window.getSelection();
@@ -103,7 +118,9 @@ export default class Clipboard implements ClipboardInterface {
 			? Range.from(editor, selection) || Range.create(editor)
 			: Range.create(editor);
 		const cloneRange = range.cloneRange();
-		const block = $('<div class="am-engine-view">&#8203;</div>');
+		const block = $(
+			`<div class="${VIEW_CLASS_NAME}" ${DATA_ELEMENT}="${ROOT}">&#8203;</div>`,
+		);
 		block.css({
 			position: 'fixed',
 			top: 0,
@@ -143,18 +160,25 @@ export default class Clipboard implements ClipboardInterface {
 				throw 'Copy failed';
 			}
 		} catch (err) {
-			console.log('The copy command was not executed successfully ', err);
+			editor.messageError(
+				'copy',
+				'The copy command was not executed successfully ',
+				err,
+			);
 			clera();
 		}
 		return success;
 	}
 
 	cut() {
-		const range = Range.from(this.editor);
-		if (!range) return;
+		const editor = this.editor;
+		const range = Range.from(editor);
+		if (!range || !isEngine(editor)) return;
 		const root = range.commonAncestorNode;
-		(this.editor as EngineInterface).change.delete(range);
-		const listElements = this.editor.node.isList(root)
+		const change = editor.change;
+		change.cacheRangeBeforeCommand();
+		change.delete(range);
+		const listElements = editor.node.isList(root)
 			? root
 			: root.find('ul,ol');
 		for (let i = 0; i < listElements.length; i++) {
@@ -168,21 +192,10 @@ export default class Clipboard implements ClipboardInterface {
 					child.parentNode?.removeChild(child);
 				}
 			});
-			if (list.children().length === 0) {
+			if (list.get<Node>()?.childNodes.length === 0) {
 				list.remove();
 			}
 		}
-	}
-
-	private setNodes(nodes: Array<Node>) {
-		if (0 === nodes.length) return {};
-		for (let i = nodes.length - 1; i > 0; i--) {
-			const node = nodes[i];
-			node.appendChild(nodes[i - 1]);
-		}
-		return {
-			inner: nodes[0],
-			outter: nodes[nodes.length - 1],
-		};
+		change.range.select(range);
 	}
 }

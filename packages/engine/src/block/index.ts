@@ -16,7 +16,12 @@ import {
 	PluginEntry,
 } from '../types';
 import { BlockInterface, BlockModelInterface } from '../types/block';
-import { getDocument, isEngine } from '../utils';
+import {
+	convertMarkdown,
+	createMarkdownIt,
+	getDocument,
+	isEngine,
+} from '../utils';
 import { Backspace, Enter } from './typing';
 import { $ } from '../node';
 import { isBlockPlugin } from '../plugin';
@@ -46,6 +51,7 @@ class Block implements BlockModelInterface {
 				?.on((event) => backspace.trigger(event));
 
 			event.on('keyup:space', (event) => this.triggerMarkdown(event));
+			event.on('keydown:enter', (event) => this.triggerMarkdown(event));
 		}
 	}
 
@@ -55,8 +61,9 @@ class Block implements BlockModelInterface {
 	 */
 	triggerMarkdown(event: KeyboardEvent) {
 		const editor = this.editor;
-		if (!isEngine(editor)) return;
-		const { change, block } = editor;
+		if (!isEngine(editor) || editor.options.markdown?.mode === false)
+			return;
+		const { change } = editor;
 		let range = change.range.get();
 		if (!range.collapsed || change.isComposing()) return;
 		const { startNode, startOffset } = range;
@@ -67,35 +74,45 @@ class Block implements BlockModelInterface {
 		if (!node) return;
 		const blockNode = this.closest(node);
 		if (!editor.node.isRootBlock(blockNode)) return;
-		const text = block.getLeftText(blockNode);
+		const text = node.text().trimEnd();
+		if (text.replaceAll(/\s|\t|\n|\r\n|\u200b/g, '') === '') return;
 		const cacheRange = range.toPath();
-		const result = !Object.keys(editor.plugin.components).some(
-			(pluginName) => {
-				const plugin = editor.plugin.components[pluginName];
-				if (isBlockPlugin(plugin) && !!plugin.markdown) {
-					const reuslt = plugin.markdown(
-						event,
-						text,
-						blockNode,
-						node,
-					);
-					if (reuslt === false) return true;
-				}
-				return;
-			},
-		);
-		if (!result) change.rangePathBeforeCommand = cacheRange;
-		return result;
+		const markdown = createMarkdownIt(editor, 'zero');
+		const tokens = markdown.parse(text, {});
+		if (tokens.length === 0) return;
+		const content = convertMarkdown(editor, markdown, tokens, false);
+		if (content) {
+			const children = blockNode.children();
+			event.preventDefault();
+			range.select(blockNode, true);
+			change.paste(content, range);
+			const newBlock = this.closest(range.startNode);
+			if (!newBlock.isRoot() && !newBlock.isCard()) {
+				children.each((child, i) => {
+					if (i > 0) {
+						newBlock.append(child);
+					}
+				});
+			}
+			change.rangePathBeforeCommand = cacheRange;
+			change.range.select(range);
+			return false;
+		}
+		return true;
 	}
+	pluginCaches: Map<string, BlockInterface> = new Map();
 	/**
 	 * 根据节点查找block插件实例
 	 * @param node 节点
 	 */
 	findPlugin(block: NodeInterface): BlockInterface | undefined {
 		const { node, schema, plugin } = this.editor;
-		if (!node.isBlock(block)) return;
-		let result: BlockInterface | undefined = undefined;
-		Object.keys(plugin.components).some((pluginName) => {
+		if (block.length === 0 || !node.isBlock(block)) return;
+		const markClone = block.get<Element>()!.cloneNode() as Element;
+		const key = markClone.outerHTML;
+		let result: BlockInterface | undefined = this.pluginCaches.get(key);
+		if (result) return result;
+		for (const pluginName in plugin.components) {
 			const blockPlugin = plugin.components[pluginName];
 			if (
 				isBlockPlugin(blockPlugin) &&
@@ -105,18 +122,17 @@ class Block implements BlockModelInterface {
 			) {
 				const schemaRule = blockPlugin.schema();
 				if (
-					!(Array.isArray(schemaRule)
+					Array.isArray(schemaRule)
 						? schemaRule.find((rule) =>
 								schema.checkNode(block, rule.attributes),
 						  )
-						: schema.checkNode(block, schemaRule.attributes))
-				)
-					return;
-				result = blockPlugin;
-				return true;
+						: schema.checkNode(block, schemaRule.attributes)
+				) {
+					this.pluginCaches.set(key, blockPlugin);
+					return blockPlugin;
+				}
 			}
-			return;
-		});
+		}
 		return result;
 	}
 	/**
@@ -151,11 +167,18 @@ class Block implements BlockModelInterface {
 	/**
 	 * 获取最近的block节点，找不到返回 node
 	 * @param node 节点
+	 * @param callback 回调
 	 */
-	closest(node: NodeInterface) {
+	closest(
+		node: NodeInterface,
+		callback: (node: NodeInterface) => boolean = () => true,
+	) {
 		const originNode = node;
 		while (node) {
-			if (node.isEditable() || this.editor.node.isBlock(node)) {
+			if (
+				(node.isEditable() || this.editor.node.isBlock(node)) &&
+				callback(node)
+			) {
 				return node;
 			}
 			const parentNode = node.parent();
@@ -170,8 +193,9 @@ class Block implements BlockModelInterface {
 	 * @param range 光标
 	 */
 	wrap(block: NodeInterface | Node | string, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, node, schema, list, mark } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node, schema, list, mark } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		if (typeof block === 'string' || isNode(block)) {
@@ -260,8 +284,9 @@ class Block implements BlockModelInterface {
 	 * @param range 光标
 	 */
 	unwrap(block: NodeInterface | Node | string, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, node } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		if (typeof block === 'string' || isNode(block)) {
@@ -397,8 +422,9 @@ class Block implements BlockModelInterface {
 	 * @param range 光标
 	 */
 	split(range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, mark, nodeId } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, mark, nodeId } = editor;
 		const safeRange = range || change.range.toTrusty();
 		// 范围为展开状态时先删除内容
 		if (!safeRange.collapsed) {
@@ -429,7 +455,7 @@ class Block implements BlockModelInterface {
 		cloneRange.shrinkToElementNode().shrinkToTextNode().collapse(true);
 		const activeMarks = mark.findMarks(cloneRange).filter((mark) => {
 			// 回车后，默认是否复制makr样式
-			const plugin = this.editor.mark.findPlugin(mark);
+			const plugin = editor.mark.findPlugin(mark);
 			return (
 				plugin?.copyOnEnter !== false && plugin?.followStyle !== false
 			);
@@ -441,7 +467,7 @@ class Block implements BlockModelInterface {
 			isLeft: false,
 			keepDataId: true,
 		});
-		const nodeApi = this.editor.node;
+		const nodeApi = editor.node;
 		sideBlock.traverse((node) => {
 			if (
 				!nodeApi.isVoid(node) &&
@@ -486,19 +512,19 @@ class Block implements BlockModelInterface {
 		}
 		block.children().each((child) => {
 			if (nodeApi.isInline(child)) {
-				this.editor.inline.repairCursor(child);
+				editor.inline.repairCursor(child);
 			}
 		});
 		sideBlock.children().each((child) => {
 			if (nodeApi.isInline(child)) {
-				this.editor.inline.repairCursor(child);
+				editor.inline.repairCursor(child);
 			}
 		});
 		// 重新设置当前选中范围
 		safeRange.select(sideBlock, true).shrinkToElementNode();
 
 		if (
-			sideBlock.children().length === 1 &&
+			sideBlock.get<Node>()?.childNodes.length === 1 &&
 			sideBlock.first()?.name === 'br'
 		) {
 			safeRange.collapse(false);
@@ -521,8 +547,9 @@ class Block implements BlockModelInterface {
 		splitNode?: (node: NodeInterface) => NodeInterface,
 		removeCurrentEmptyBlock: boolean = false,
 	) {
-		if (!isEngine(this.editor)) return;
-		const { change, node, list, inline } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node, list, inline } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		if (typeof block === 'string' || isNode(block)) {
@@ -564,7 +591,7 @@ class Block implements BlockModelInterface {
 		// to
 		// <p><br /><cursor /></p>
 		if (
-			container.children().length === 1 &&
+			container.get<Node>()?.childNodes.length === 1 &&
 			container.first()?.name === 'br'
 		) {
 			safeRange.select(container, true).collapse(false);
@@ -587,6 +614,7 @@ class Block implements BlockModelInterface {
 				leftNode.remove();
 			}
 		});
+
 		let rightNodes = selection.getNode(
 			container,
 			'right',
@@ -627,10 +655,11 @@ class Block implements BlockModelInterface {
 			!list.isEmptyItem(rightNodes)
 		) {
 			const right = rightNodes.clone(false);
+			editor.nodeId.generate(right, true);
 			const rightChildren = rightNodes.children();
 			rightChildren.each((child, index) => {
 				if (rightChildren.eq(index)?.isCard()) {
-					const card = this.editor.card.find(child);
+					const card = editor.card.find(child);
 					if (card) right.append(card.root);
 				} else right.append(child);
 			});
@@ -684,9 +713,10 @@ class Block implements BlockModelInterface {
 	 * @param range 光标
 	 */
 	setBlocks(block: string | { [k: string]: any }, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { node, schema, mark } = this.editor;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { node, schema, mark } = editor;
+		const { change } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const doc = getDocument(safeRange.startContainer);
 		let targetNode: NodeInterface | null = null;
@@ -814,8 +844,9 @@ class Block implements BlockModelInterface {
 	 * @param range 光标
 	 */
 	merge(range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change, schema } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, schema } = editor;
 		const safeRange = range || change.range.toTrusty();
 		const blocks = this.getBlocks(safeRange);
 		if (0 === blocks.length) return;
@@ -839,7 +870,7 @@ class Block implements BlockModelInterface {
 					Object.keys(nextAttributes).join(',') ===
 						Object.keys(prevAttributes || {}).join(',')
 				) {
-					this.editor.node.merge(prevNode, nextNode);
+					editor.node.merge(prevNode, nextNode);
 				}
 				nextNode = nextNode.next();
 			}
@@ -852,11 +883,12 @@ class Block implements BlockModelInterface {
 	 * 获取对范围有效果的所有 Block
 	 */
 	findBlocks(range: RangeInterface) {
+		const editor = this.editor;
 		range = range.cloneRange();
 		if (range.startNode.isRoot()) range.shrinkToElementNode();
 		if (
 			!range.startNode.inEditor() ||
-			this.editor.card.find(range.startNode)?.type === CardType.BLOCK
+			editor.card.find(range.startNode)?.type === CardType.BLOCK
 		)
 			return [];
 		const sc = range.startContainer;
@@ -906,7 +938,7 @@ class Block implements BlockModelInterface {
 				if (node.isEditable()) {
 					break;
 				}
-				if (this.editor.node.isBlock(node)) {
+				if (editor.node.isBlock(node)) {
 					nodes.push(node);
 				}
 				const parent = node.parent();
@@ -922,7 +954,7 @@ class Block implements BlockModelInterface {
 			return addNode(nodes, node, true);
 		});
 		const { commonAncestorNode } = range;
-		const card = this.editor.card.find(commonAncestorNode, true);
+		const card = editor.card.find(commonAncestorNode, true);
 		let isEditable = card?.isEditable;
 		const selectionNodes = isEditable
 			? card?.getSelectionNodes
@@ -942,13 +974,13 @@ class Block implements BlockModelInterface {
 						if (
 							child.isElement() &&
 							!child.isCard() &&
-							this.editor.node.isBlock(child)
+							editor.node.isBlock(child)
 						) {
 							addNode(nodes, child);
 						}
 					},
 					true,
-					true,
+					'editable',
 				);
 			});
 		}
@@ -968,13 +1000,14 @@ class Block implements BlockModelInterface {
 		const block = this.closest(container);
 		range.select(block, true);
 		range.setEnd(container[0], offset);
-		if (!this.editor.node.isBlock(container)) range.enlargeToElementNode();
+		const editor = this.editor;
+		if (!editor.node.isBlock(container)) range.enlargeToElementNode();
 		const fragment = range.cloneContents();
 
 		if (!fragment.firstChild) {
 			return true;
 		}
-		const { node } = this.editor;
+		const { node } = editor;
 		if (
 			fragment.childNodes.length === 1 &&
 			$(fragment.firstChild).name === 'br'
@@ -1000,13 +1033,13 @@ class Block implements BlockModelInterface {
 		const block = this.closest(container);
 		range.select(block, true);
 		range.setStart(container, offset);
-		if (!this.editor.node.isBlock(container)) range.enlargeToElementNode();
+		const { node } = this.editor;
+		if (!node.isBlock(container)) range.enlargeToElementNode();
 		const fragment = range.cloneContents();
 
 		if (!fragment.firstChild) {
 			return true;
 		}
-		const { node } = this.editor;
 		const emptyNode = $('<div />');
 		emptyNode.append(fragment);
 
@@ -1021,8 +1054,8 @@ class Block implements BlockModelInterface {
 		range = range.cloneRange();
 		range.shrinkToElementNode();
 		range.shrinkToTextNode();
-
-		const { node } = this.editor;
+		const editor = this.editor;
+		const { node } = editor;
 
 		let startBlock = this.closest(range.startNode);
 		if (range.startNode.isRoot()) {
@@ -1037,7 +1070,7 @@ class Block implements BlockModelInterface {
 		const blocks: Array<NodeInterface> = [];
 		let started = false;
 		const { commonAncestorNode } = range;
-		const card = this.editor.card.find(commonAncestorNode, true);
+		const card = editor.card.find(commonAncestorNode, true);
 		let isEditable = card?.isEditable;
 		const selectionNodes = isEditable
 			? card?.getSelectionNodes
@@ -1057,7 +1090,7 @@ class Block implements BlockModelInterface {
 					}
 					if (
 						(started || isEditable) &&
-						this.editor.node.isBlock(child) &&
+						editor.node.isBlock(child) &&
 						!child.isCard() &&
 						child.inEditor()
 					) {
@@ -1070,7 +1103,7 @@ class Block implements BlockModelInterface {
 					return;
 				},
 				true,
-				true,
+				'editable',
 			);
 		});
 
@@ -1105,7 +1138,8 @@ class Block implements BlockModelInterface {
 		keepDataId?: boolean;
 	}) {
 		if (isNode(block)) block = $(block);
-		const newRange = Range.create(this.editor, block.document!);
+		const editor = this.editor;
+		const newRange = Range.create(editor, block.document!);
 
 		if (isLeft) {
 			newRange.select(block, true);
@@ -1120,7 +1154,7 @@ class Block implements BlockModelInterface {
 			: newRange.extractContents();
 		const cloneBlock = keepDataId
 			? block.clone(false)
-			: this.editor.node.clone(block, false, false);
+			: editor.node.clone(block, false, false);
 		cloneBlock.append(fragement);
 		if (clone) {
 			cloneBlock.find(CARD_SELECTOR).each((card) => {
@@ -1138,18 +1172,16 @@ class Block implements BlockModelInterface {
 	 * @param block 节点
 	 */
 	getLeftText(block: NodeInterface | Node, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return '';
-		range = range || this.editor.change.range.get();
+		const editor = this.editor;
+		if (!isEngine(editor)) return '';
+		range = range || editor.change.range.get();
 		const leftBlock = this.getBlockByRange({
 			block,
 			range,
 			isLeft: true,
 			clone: true,
 		});
-		return leftBlock
-			.text()
-			.trim()
-			.replace(/\u200B/g, '');
+		return leftBlock.text().replace(/\u200B/g, '');
 	}
 
 	/**
@@ -1157,8 +1189,9 @@ class Block implements BlockModelInterface {
 	 * @param block 节点
 	 */
 	removeLeftText(block: NodeInterface | Node, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		range = range || this.editor.change.range.get();
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		range = range || editor.change.range.get();
 		if (isNode(block)) block = $(block);
 		range.createSelection();
 		const cursor = block.find(CURSOR_SELECTOR);
@@ -1183,17 +1216,19 @@ class Block implements BlockModelInterface {
 	 * @param root 根节点
 	 */
 	flat(block: NodeInterface, root: NodeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { schema, node } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { schema, node } = editor;
 		const mergeTags = schema.getCanMergeTags();
 		//获取父级节点
 		let parentNode = block.parent();
-		const rootElement = root.fragment ? root[0].parentNode : root;
+		const rootElement = root.fragment ? root[0].parentNode : root.get();
+
 		//在根节点内循环
 		while (
 			parentNode &&
 			rootElement &&
-			!parentNode.equal(rootElement) &&
+			parentNode.get() !== rootElement &&
 			parentNode.inEditor()
 		) {
 			//如果是卡片节点，就在父节点前面插入
@@ -1226,69 +1261,6 @@ class Block implements BlockModelInterface {
 			//设置新的父节点
 			parentNode = block.parent();
 		}
-	}
-
-	/**
-	 * br 换行改成段落
-	 * @param block 节点
-	 */
-	brToBlock(block: NodeInterface) {
-		const first = block.first();
-		// 没有子节点
-		if (!first) {
-			return;
-		}
-		const blockElement = block.get<Element>();
-		const children = blockElement?.childNodes || [];
-		// 只有一个节点
-		if (children.length === 1) {
-			const node = first;
-			//\n换成 br
-			if (node && node.isText() && /^\n+$/g.test(node.text())) {
-				block.remove();
-				//this.editor.node.replace(node, $('<br />'));
-			}
-			return;
-		}
-		if ('li' === block.name) return;
-		// 只有一个节点（有光标标记节点）
-		if (
-			(children.length === 2 &&
-				first?.attributes(DATA_ELEMENT) === CURSOR) ||
-			block.last()?.attributes(DATA_ELEMENT) === CURSOR
-		) {
-			return;
-		}
-		// 没有br标签
-		if (!blockElement?.querySelector('br')) return;
-
-		let container;
-		let prevContainer;
-		let node: NodeInterface | null = first;
-		while (node) {
-			const next = node.next();
-			if (!container || node.name === 'br') {
-				prevContainer = container;
-				container = this.editor.node.clone(block, false, false);
-				block.before(container);
-			}
-			if (node.name !== 'br') {
-				container.append(node);
-			}
-			if (
-				(node.name === 'br' || !next) &&
-				prevContainer &&
-				!prevContainer.first()
-			) {
-				prevContainer.append($('<br />'));
-			}
-			node = next;
-		}
-
-		if (container && !container.first()) {
-			container.remove();
-		}
-		block.remove();
 	}
 
 	/**
@@ -1345,7 +1317,7 @@ class Block implements BlockModelInterface {
 		if (
 			this.isLastOffset(range, 'end') ||
 			(cloneRange.endNode.type === Node.ELEMENT_NODE &&
-				block.children().length > 0 &&
+				(block.get<Node>()?.childNodes.length || 0) > 0 &&
 				cloneRange.endContainer.childNodes[cloneRange.endOffset] ===
 					block.last()?.get() &&
 				'br' === block.first()?.name)

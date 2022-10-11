@@ -6,11 +6,12 @@ import { CardInterface } from '../types/card';
 import { EngineInterface } from '../types/engine';
 import { RangeInterface } from '../types/range';
 import Range from '../range';
-import { CARD_ELEMENT_KEY } from '../constants/card';
+import { CARD_CENTER_SELECTOR, CARD_ELEMENT_KEY } from '../constants/card';
 import { ClipboardData } from '../types/clipboard';
 import { DATA_ELEMENT, UI } from '../constants';
 import { $ } from '../node';
 import { isAndroid, isMobile, isSafari } from '../utils';
+import { isBlockCard, isCard, isEditable, isRoot } from '../node/utils';
 
 type GlobalEventType = 'root' | 'window' | 'container' | 'document';
 class ChangeEvent implements ChangeEventInterface {
@@ -92,11 +93,58 @@ class ChangeEvent implements ChangeEventInterface {
 			}
 			this.isComposing = true;
 		});
-		this.onContainer('compositionend', () => {
+
+		const submitInput = (e: Event) => {
+			if (!this.isComposing) {
+				// 清理输入前插入到自定义列表的卡片后的零宽字符
+				if (isAndroid && androidCustomeListComposingNode) {
+					const first = androidCustomeListComposingNode.first();
+					const next = first?.next();
+					if (next?.isText()) {
+						const text = next.text();
+						if (/^\u200b/.test(text)) {
+							const textNode = next.get<Text>();
+							textNode?.splitText(1);
+							textNode?.remove();
+						}
+					}
+					const range = this.engine.change.range.get();
+					const { startNode, startOffset } = range;
+					if (range.collapsed && startNode?.isText()) {
+						const text = startNode.text();
+						const sufix = text.substring(startOffset);
+						if (/^\u200b/.test(sufix)) {
+							startNode.text(
+								text.substring(0, startOffset) +
+									sufix.substring(1),
+							);
+							range.setOffset(
+								startNode,
+								startOffset,
+								startOffset,
+							);
+							this.engine.change.range.select(range);
+						}
+					}
+					androidCustomeListComposingNode = null;
+				}
+				callback(e);
+				// 组合输入法结束后提交协同
+				this.engine.ot.submitMutationCache();
+			}
+		};
+
+		this.onContainer('compositionend', (e) => {
 			if (this.engine.readonly) {
 				return;
 			}
 			this.isComposing = false;
+			// 日文输入法，input 后未即时触发 compositionend 方法，这里检测如果还在突变缓存中就提交
+			setTimeout(() => {
+				if (this.engine.ot.isCache) {
+					submitInput(e);
+				}
+			}, 40);
 		});
 		//对系统工具栏操作拦截，一般针对移动端的文本上下文工具栏
 		//https://rawgit.com/w3c/input-events/v1/index.html#interface-InputEvent-Attributes
@@ -104,7 +152,7 @@ class ChangeEvent implements ChangeEventInterface {
 			if (this.engine.readonly) return;
 			// safari 组合输入法会直接插入@字符，这里统一全部拦截输入@字符的时候再去触发@事件
 			const { change, card, node, block, list } = this.engine;
-			if (event.data === '@') {
+			if (event.data === '@' && !this.isCardInput(event)) {
 				// 如果没有要对 @ 字符处理的就不拦截
 				const result = this.engine.trigger('keydown:at', event);
 				if (result === false) {
@@ -124,11 +172,28 @@ class ChangeEvent implements ChangeEventInterface {
 			const { startNode } = range;
 			if (
 				isSafari &&
+				event.inputType === 'deleteCompositionText' &&
 				startNode.name === 'li' &&
+				startNode.length > 0 &&
 				!node.isCustomize(startNode)
 			) {
-				if (startNode.first()?.name !== 'br')
+				const childNodes = startNode[0].childNodes;
+				if (
+					childNodes.length === 1 &&
+					childNodes[0].nodeName !== 'BR'
+				) {
 					startNode.prepend('<br />');
+					setTimeout(() => {
+						const childNodes = startNode[0].childNodes;
+						if (
+							childNodes.length === 2 &&
+							childNodes[0].nodeName === 'BR' &&
+							childNodes[1].nodeName === 'BR'
+						) {
+							childNodes[0].remove();
+						}
+					}, 0);
+				}
 			}
 			// 安卓在自定义列表前组合输入的时候会出现字符错乱
 			// 解决：在列表下的自定义卡片后面插入一个零宽字符，等组合输入法完成后再删除
@@ -174,6 +239,26 @@ class ChangeEvent implements ChangeEventInterface {
 						card.remove(range.endNode);
 				}
 			}
+			if (range.startNode.isRoot()) {
+				const startNode = range.getStartOffsetNode();
+				if (
+					startNode instanceof Element &&
+					isCard(startNode) &&
+					!startNode.querySelector(CARD_CENTER_SELECTOR)
+				) {
+					card.remove(startNode);
+				}
+				if (!range.collapsed && range.endNode.isRoot()) {
+					const endNode = range.getEndOffsetNode();
+					if (
+						endNode instanceof Element &&
+						isCard(endNode) &&
+						!endNode.querySelector(CARD_CENTER_SELECTOR)
+					) {
+						card.remove(endNode);
+					}
+				}
+			}
 			// 如果光标在自定义列表项节点前输入先自定义删除，不然排版不对
 			if (!range.collapsed && !this.isComposing) {
 				const startBlock = block.closest(range.startNode);
@@ -189,29 +274,34 @@ class ChangeEvent implements ChangeEventInterface {
 			}
 			const { inputType } = event;
 			// 在组合输入法未正常执行结束命令插入就先提交协同
-			if (this.isComposing && !inputType.includes('Composition')) {
+			if (
+				this.isComposing &&
+				(!inputType || !inputType.includes('Composition'))
+			) {
 				this.engine.ot.submitMutationCache();
 			}
 			const commandTypes = ['format', 'history'];
-			commandTypes.forEach((type) => {
-				if (inputType.indexOf(type) === 0) {
-					event.preventDefault();
-					const commandName = inputType
-						.substring(type.length)
-						.toLowerCase();
-					if (this.engine.command.queryEnabled(commandName)) {
-						this.engine.command.execute(commandName);
+			if (inputType) {
+				commandTypes.forEach((type) => {
+					if (inputType.indexOf(type) === 0) {
+						event.preventDefault();
+						const commandName = inputType
+							.substring(type.length)
+							.toLowerCase();
+						if (this.engine.command.queryEnabled(commandName)) {
+							this.engine.command.execute(commandName);
+						}
 					}
-				}
-			});
+				});
+			}
 		});
 		let inputTimeout: NodeJS.Timeout | null = null;
-		this.onContainer('input', (e: Event) => {
+		this.onContainer('input', (event: InputEvent) => {
 			if (this.engine.readonly) {
 				return;
 			}
 
-			if (this.isCardInput(e)) {
+			if (this.isCardInput(event)) {
 				return;
 			}
 			if (this.engine.isEmpty()) {
@@ -219,51 +309,36 @@ class ChangeEvent implements ChangeEventInterface {
 			} else {
 				this.engine.hidePlaceholder();
 			}
+			const { change, card } = this.engine;
+			if (
+				event.target instanceof Element &&
+				isEditable(event.target) &&
+				card.active &&
+				card.active.root.isBlockCard() &&
+				!card.active.isEditable &&
+				card.active.root.get<HTMLElement>()?.isContentEditable
+			) {
+				const range = change.range.get();
+				const newBlock = $(`<p><br /></p>`);
+				card.active.root.before(newBlock);
+				card.remove(card.active.root);
+				range.select(newBlock, true);
+				change.range.select(range);
+				return;
+			}
 			if (inputTimeout) clearTimeout(inputTimeout);
 
 			inputTimeout = setTimeout(() => {
-				if (!this.isComposing) {
-					// 清理输入前插入到自定义列表的卡片后的零宽字符
-					if (isAndroid && androidCustomeListComposingNode) {
-						const first = androidCustomeListComposingNode.first();
-						const next = first?.next();
-						if (next?.isText()) {
-							const text = next.text();
-							if (/^\u200b/.test(text)) {
-								const textNode = next.get<Text>();
-								textNode?.splitText(1);
-								textNode?.remove();
-							}
-						}
-						const range = this.engine.change.range.get();
-						const { startNode, startOffset } = range;
-						if (range.collapsed && startNode?.isText()) {
-							const text = startNode.text();
-							const sufix = text.substring(startOffset);
-							if (/^\u200b/.test(sufix)) {
-								startNode.text(
-									text.substring(0, startOffset) +
-										sufix.substring(1),
-								);
-								range.setOffset(
-									startNode,
-									startOffset,
-									startOffset,
-								);
-								this.engine.change.range.select(range);
-							}
-						}
-						androidCustomeListComposingNode = null;
-					}
-					callback(e);
-					// 组合输入法结束后提交协同
-					this.engine.ot.submitMutationCache();
-				}
+				submitInput(event);
 			}, 10);
 		});
 	}
 
-	onSelect(callback: EventListener) {
+	onSelect(
+		callback: EventListener,
+		onStart?: EventListener,
+		onEnd?: EventListener,
+	) {
 		const { bindSelect } = this.options;
 		if (bindSelect && !bindSelect()) return;
 		// 模拟 selection change 事件
@@ -274,6 +349,7 @@ class ChangeEvent implements ChangeEventInterface {
 					return;
 				}
 				this.isSelecting = true;
+				if (onStart) onStart(event);
 			},
 		);
 		this.onDocument(isMobile ? 'touchend' : 'mouseup', (e) => {
@@ -283,7 +359,8 @@ class ChangeEvent implements ChangeEventInterface {
 			this.isSelecting = false;
 			// mouseup 瞬间选择状态不会马上被取消，需要延迟
 			window.setTimeout(() => {
-				return callback(e);
+				callback(e);
+				if (onEnd) onEnd(e);
 			}, 10);
 		});
 		this.onContainer('keydown', () => {

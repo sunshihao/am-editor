@@ -14,6 +14,7 @@ import { cards, pluginConfig, plugins } from './config';
 import Toolbar, { ToolbarItemProps } from './toolbar';
 import './index.less';
 import ReactDOM from 'react-dom';
+import { IS_DEV } from '../../config';
 
 export type Content = {
 	value: string;
@@ -97,6 +98,7 @@ const EditorComponent: React.FC<EditorProps> = ({
 	//用户主动保存
 	const userSave = useCallback(() => {
 		if (!engine.current) return;
+		console.log(engine.current.getHtml());
 		//获取异步的值，有些组件可能还在处理中，比如正在上传
 		engine.current
 			.getValueAsync(false, (pluginName, card) => {
@@ -126,7 +128,7 @@ const EditorComponent: React.FC<EditorProps> = ({
 		cards: props.cards || cards,
 		config: {
 			...props.config,
-			...pluginConfig,
+			...pluginConfig(props.lang),
 		},
 		// 编辑器值改变事件
 		onChange: useCallback(
@@ -135,18 +137,25 @@ const EditorComponent: React.FC<EditorProps> = ({
 				//自动保存，非远程更改，触发保存
 				if (trigger !== 'remote') autoSave();
 				if (props.onChange) props.onChange(trigger);
-				// const value = engine.current?.getValue();
-				// 获取编辑器的值
-				// console.log(`value ${trigger} update:`, value);
-				// 获取当前所有at插件中的名单
-				// console.log(
-				// 	'mention:',
-				// 	engine.current?.command.executeMethod('mention', 'getList'),
-				// );
-				// 获取编辑器的html
-				// console.log('html:', engine.current?.getHtml());
-				// 获取编辑器的json
-				// console.log('json:', engine.current?.getJsonValue());
+				if (IS_DEV) {
+					const value = engine.current?.getValue();
+					// 获取编辑器的值
+					console.log(`value ${trigger} update:`, value);
+					// 获取当前所有at插件中的名单
+					console.log(
+						'mention:',
+						engine.current?.command.executeMethod(
+							'mention',
+							'getList',
+						),
+					);
+					// 获取编辑器的html
+					console.log('html:', engine.current?.getHtml());
+					// 获取编辑器的json
+					console.log('json:', engine.current?.getJsonValue());
+					// 获取编辑器的text
+					console.log('text:', engine.current?.getText());
+				}
 			},
 			[loading, autoSave, props.onChange],
 		),

@@ -12,8 +12,9 @@ import {
 	decodeCardValue,
 	CARD_VALUE_KEY,
 	transformCustomTags,
+	DATA_ID,
 } from '@aomao/engine';
-import { DATA_ID } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import TableComponent, { Template, Helper } from './component';
 import locales from './locale';
 import { TableInterface, TableOptions, TableValue } from './types';
@@ -34,77 +35,22 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		editor.language.add(locales);
 		editor.schema.add(this.schema());
 		editor.conversion.add('th', 'td');
-		editor.on('parse:html', (node) => this.parseHtml(node));
-		editor.on('paste:each-after', (root) => this.pasteHtml(root));
-		editor.on('paste:schema', (schema: SchemaInterface) =>
-			this.pasteSchema(schema),
-		);
-		editor.on(
-			'paste:markdown-check',
-			(child) => !this.checkMarkdown(child)?.match,
-		);
-		editor.on('paste:markdown-after', (child) => this.pasteMarkdown(child));
+		editor.on('parse:html', this.parseHtml);
+		editor.on('paste:each', this.pasteEach);
+		editor.on('paste:each-after', this.pasteHtml);
+		editor.on('paste:schema', this.pasteSchema);
 		if (isEngine(editor)) {
-			editor.change.event.onDocument(
-				'copy',
-				(event) => this.onCopy(event),
-				0,
-			);
-			editor.change.event.onDocument(
-				'cut',
-				(event) => this.onCut(event),
-				0,
-			);
-			editor.change.event.onDocument(
-				'paste',
-				(event) => this.onPaste(event),
-				0,
-			);
-			// 过滤掉表格初始化的时候调整后的宽度作为历史记录
-			const targetTableCache: Record<string, TableInterface> = {};
-			editor.history.onFilter((op) => {
-				if (
-					op.id &&
-					(('od' in op &&
-						(op.od.startsWith('width') ||
-							op.od === op.id ||
-							op.od.startsWith('data:') ||
-							/^\d+$/.test(op.od))) ||
-						('oi' in op &&
-							(op.oi.startsWith('width') ||
-								op.oi === op.id ||
-								op.oi.startsWith('data:') ||
-								/^\d+$/.test(op.oi))))
-				) {
-					let component: TableInterface | undefined =
-						targetTableCache[op.id];
-					if (!component || !component.root.parent()) {
-						const targetNode = $(`[${DATA_ID}="${op.id}"]`);
-						delete targetTableCache[op.id];
-						if (targetNode.length > 0) {
-							component = editor.card.find<
-								TableValue,
-								TableComponent
-							>(targetNode);
-							//if(component && component?.name === TableComponent.cardName) targetTableCache[op.id] = component
-						}
-					}
-					if (
-						component?.name === TableComponent.cardName &&
-						!component.isChanged
-					) {
-						op['nl'] = true;
-						return true;
-					}
-				}
-				return false;
-			});
+			this.editor.on('markdown-it', this.markdownIt);
+			editor.change.event.onDocument('copy', this.onCopy, 0);
+			editor.change.event.onDocument('cut', this.onCut, 0);
+			editor.change.event.onDocument('paste', this.onPaste, 0);
 		}
 	}
 
-	onCopy(event: ClipboardEvent) {
-		if (!isEngine(this.editor)) return true;
-		const { change, card } = this.editor;
+	onCopy = (event: ClipboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return true;
+		const { change, card } = editor;
 		const range = change.range.get();
 		const component = card.find<TableValue, TableComponent>(
 			range.commonAncestorNode,
@@ -112,25 +58,27 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		);
 		if (
 			component &&
-			component.getSelectionNodes &&
-			component.name === TableComponent.cardName
+			component.name === TableComponent.cardName &&
+			!component.isCursor(range.startNode)
 		) {
 			const nodes = component.getSelectionNodes();
 			if (nodes.length > 1) {
 				event.preventDefault();
 				component.command.copy();
-				this.editor.messageSuccess(
-					this.editor.language.get<string>('copy', 'success'),
+				editor.messageSuccess(
+					'copy',
+					editor.language.get<string>('copy', 'success'),
 				);
 				return false;
 			}
 		}
 		return true;
-	}
+	};
 
-	onCut(event: ClipboardEvent) {
-		if (!isEngine(this.editor)) return true;
-		const { change, card } = this.editor;
+	onCut = (event: ClipboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor) || editor.readonly) return true;
+		const { change, card } = editor;
 		const range = change.range.get();
 		const component = card.find<TableValue, TableComponent>(
 			range.commonAncestorNode,
@@ -138,8 +86,8 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		);
 		if (
 			component &&
-			component.getSelectionNodes &&
-			component.name === TableComponent.cardName
+			component.name === TableComponent.cardName &&
+			!component.isCursor(range.startNode)
 		) {
 			const nodes = component.getSelectionNodes();
 			if (nodes.length > 1) {
@@ -149,11 +97,12 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 			}
 		}
 		return true;
-	}
+	};
 
-	onPaste(event: ClipboardEvent) {
-		if (!isEngine(this.editor)) return true;
-		const { change, card } = this.editor;
+	onPaste = (event: ClipboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor) || editor.readonly) return true;
+		const { change, card } = editor;
 		const range = change.range.get();
 		const component = card.find<TableValue, TableComponent>(
 			range.commonAncestorNode,
@@ -161,16 +110,24 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		);
 		if (
 			component &&
-			component.getSelectionNodes &&
 			component.name === TableComponent.cardName &&
-			component.command.hasCopyData()
+			!component.isCursor(range.startNode)
 		) {
+			const data = editor.clipboard.getData(event);
+			if (
+				!data ||
+				!/<meta\s+name="aomao"\s+content="table"\s{0,}\/?>/gi.test(
+					data.html || '',
+				)
+			) {
+				return true;
+			}
 			event.preventDefault();
-			component.command.mockPaste();
+			component.command.paste(data);
 			return false;
 		}
 		return true;
-	}
+	};
 
 	hotkey() {
 		return this.options.hotkey || '';
@@ -255,7 +212,7 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		];
 	}
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		(schema.data.blocks as SchemaBlock[]).forEach((blockSchema) => {
 			if (!blockSchema.allowIn) {
 				blockSchema.allowIn = [];
@@ -264,15 +221,25 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 				blockSchema.allowIn.push('td');
 			}
 		});
-		schema.find((r) => r.name === 'table')[0].attributes = {
+		const table = schema.find((r) => r.name === 'table')[0];
+		table.attributes = {
 			class: ['data-table'],
 			'data-table-no-border': '*',
-			'data-wdith': '@length',
+			'data-width': '@length',
 			style: {
 				width: '@length',
 				background: '@color',
 				'background-color': '@color',
 			},
+		};
+		const allowIn = (table as SchemaBlock).allowIn;
+		if (!allowIn) {
+			(table as SchemaBlock).allowIn = ['div'];
+		} else {
+			allowIn.push('div');
+		}
+		schema.find((r) => r.name === 'div')[0].attributes = {
+			class: { required: true, value: ['editor-table-wrapper'] },
 		};
 		schema.find((r) => r.name === 'tr')[0].attributes = {
 			class: ['data-table'],
@@ -300,16 +267,17 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 				valign: ['top', 'middle', 'bottom'],
 			},
 		};
-	}
+	};
 
 	execute(rows?: number, cols?: number): void {
-		if (!isEngine(this.editor)) return;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		//可编辑子区域内不插入表格
-		const { change } = this.editor;
+		const { change } = editor;
 		const range = change.range.get();
 		if (range.startNode.closest(EDITABLE_SELECTOR).length > 0) return;
 		//插入表格
-		this.editor.card.insert<TableValue>(TableComponent.cardName, {
+		editor.card.insert<TableValue>(TableComponent.cardName, {
 			rows: rows || 3,
 			cols: cols || 3,
 			overflow: !!this.options.overflow,
@@ -326,8 +294,19 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		return value;
 	}
 
-	pasteHtml(root: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteEach = (node: NodeInterface) => {
+		if (
+			node.name === 'div' &&
+			node.hasClass('editor-table-wrapper') &&
+			node.first()?.name === 'table'
+		) {
+			this.editor.node.unwrap(node);
+		}
+	};
+
+	pasteHtml = (root: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		const clearWH = (
 			node: NodeInterface,
 			type: 'width' | 'height' = 'width',
@@ -339,9 +318,9 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 		};
 		const tables = root.find('table');
 		if (tables.length === 0) return;
-		const helper = new Helper(this.editor);
+		const helper = new Helper(editor);
 		// 判断当前是在可编辑卡片内，在可编辑卡片内不嵌套表格
-		const { change } = this.editor;
+		const { change } = editor;
 		const range = change.range.get();
 
 		const clearTable = (table: NodeInterface) => {
@@ -354,8 +333,7 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 			trs.forEach((tr) => {
 				const tds = tr.find('td').toArray();
 				tds.forEach((td) => {
-					if (!this.editor.node.isEmpty(td))
-						table.before(td.children());
+					if (!editor.node.isEmpty(td)) table.before(td.children());
 				});
 			});
 			const tfoot = table.find('tfoot');
@@ -387,6 +365,13 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 				childNodes.each((tdChild) => {
 					const td = $(tdChild);
 					const text = td.text();
+					const childTable = td.find('table');
+					if (childTable.length > 0) {
+						childTable.after(
+							document.createTextNode(childTable.text()),
+						);
+						childTable.remove();
+					}
 					// 排除空格
 					if (
 						td.name !== 'td' &&
@@ -398,6 +383,8 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 					}
 				});
 			});
+			const dataWidth = node.attributes('data-width');
+			if (dataWidth) node.css('width', dataWidth);
 			node = helper.normalizeTable(node);
 			clearWH(node);
 			clearWH(node, 'height');
@@ -429,15 +416,20 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 				const valign = element.attributes('valign');
 				if (valign) element.attributes('vertical-align', valign);
 				const children = element.children();
-				for (let i = 0; i < children.length; i++) {
+				for (let i = 0, len = children.length; i < len; i++) {
 					const child = children.eq(i);
+					// 移除单元格第一个和最后一个换行符，word 里面粘贴会存在，导致空行
+					if ((i === 0 || i === len - 1) && child?.isText()) {
+						const text = child.text();
+						if (/^\n(\s)*$/.test(text)) {
+							continue;
+						}
+					}
 					if (child) fragment.appendChild(child[0]);
 				}
 				// 对单元格内的内容标准化
 				const fragmentNode = $(fragment);
-				element
-					?.empty()
-					.append(this.editor.node.normalize(fragmentNode));
+				element?.empty().append(editor.node.normalize(fragmentNode));
 			});
 			const background =
 				node?.css('background') || node?.css('background-color');
@@ -468,31 +460,30 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 					tr?.css('background') || tr?.css('background-color');
 				if (background) tds?.css('background', background);
 			});
-			this.editor.nodeId.generateAll(node, true);
+			editor.nodeId.generateAll(node, true);
 			const children = node.allChildren();
 			children.forEach((child) => {
-				if (this.editor.node.isInline(child)) {
-					this.editor.inline.repairCursor(child);
+				if (editor.node.isInline(child)) {
+					editor.inline.repairCursor(child);
 				}
 			});
 			const html = node
 				.get<HTMLElement>()!
 				.outerHTML.replace(/\n|\r\n/g, '')
 				.replace(/>\s+</g, '><');
-			this.editor.card.replaceNode<TableValue>(
-				node,
-				TableComponent.cardName,
-				{
-					html,
-				},
-			);
+			editor.card.replaceNode<TableValue>(node, TableComponent.cardName, {
+				html,
+			});
+			node.remove();
 		});
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: TableValue) => NodeInterface,
-	) {
+	) => {
+		const editor = this.editor;
+		const results: NodeInterface[] = [];
 		root.find(
 			`[${CARD_KEY}="${TableComponent.cardName}"],[${READY_CARD_KEY}="${TableComponent.cardName}"]`,
 		).each((tableNode) => {
@@ -509,7 +500,7 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 					node.remove();
 					return;
 				} else {
-					this.editor.trigger('parse:html', table);
+					editor.trigger('parse:html', table);
 				}
 			}
 			const width = table.attributes('width') || table.css('width');
@@ -537,127 +528,38 @@ class Table<T extends TableOptions = TableOptions> extends Plugin<T> {
 			});
 			table.find(Template.TABLE_TD_BG_CLASS).remove();
 			table.find(Template.TABLE_TD_CONTENT_CLASS).each((content) => {
-				this.editor.node.unwrap($(content));
+				editor.node.unwrap($(content));
 			});
 			if (callback) {
 				table = callback(table, value);
 			}
+
+			//添加table的容器id; table 添加外部包裹div;用于table过长导致 文本溢出
+			const tableId = table.attributes('data-id') + '-table';
+			table = $(
+				`<div class="editor-table-wrapper" style='width:100%;overflow:auto;'  data-id='${tableId}'  data-table-no-border='${!!table.attributes(
+					'data-table-no-border',
+				)}'>`,
+			).append(table);
+
 			node.replaceWith(table);
+			results.push(table);
 		});
-	}
+		return results;
+	};
 
-	getMarkdownCell(match: RegExpExecArray, count?: number) {
-		const cols = match[0].split('|');
-		const headeText = match[0].trim().replace(/\n/, '');
-		if (headeText.endsWith('|')) cols.pop();
-		if (headeText.startsWith('|')) cols.shift();
-		const colNodes: Array<string> = [];
-		cols.some((col) => {
-			if (count !== undefined && colNodes.length === count) return true;
-			colNodes.push(col);
-			return false;
-		});
-		return colNodes;
-	}
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('table');
+		}
+	};
 
-	checkMarkdown(node: NodeInterface) {
-		if (
-			!isEngine(this.editor) ||
-			this.options.markdown === false ||
-			!node.isText()
-		)
-			return;
-		const text = node.text();
-		if (!text) return;
-		// 匹配 |-|-| 或者 -|- 或者 |-|- 或者 -|-|
-		const reg = /\n\s*(\|?(\s*:?-+:?\s*)+\|?)+\s*(\n|$)/;
-		const tbMatch = reg.exec(text);
-		if (!tbMatch || tbMatch[0].indexOf('|') < 0) return;
-		return {
-			reg,
-			match: tbMatch,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		const { reg, match } = result;
-		if (!match) return;
-		const parse = (node: NodeInterface) => {
-			let text = node.text();
-			if (!text) return;
-			const tbMatch = reg.exec(text);
-			if (!tbMatch || tbMatch[0].indexOf('|') < 0) return;
-			// 文本节点
-			const textNode = node.clone(true).get<Text>()!;
-			// 列数
-			const colCount = tbMatch[0]
-				.split('|')
-				.filter(
-					(cell) => cell.trim() !== '' && cell.includes('-'),
-				).length;
-			// 从匹配出分割
-			const tbRegNode = textNode.splitText(tbMatch.index);
-			// 获取表头
-			const thReg = new RegExp(
-				`(\\|?([^\\|\\n]+)\\|?){${colCount},}\\s*$`,
-			);
-			const headRows = (textNode.textContent || '').split(/\n/);
-			let match = thReg.exec(
-				headRows.length > 0 ? headRows[headRows.length - 1] : '',
-			);
-			if (!match || match[0].indexOf('|') < 0) return;
-			headRows.pop();
-			textNode.splitText(headRows.join('\n').length + match.index);
-			// 拼接之前的文本
-			let regNode = tbRegNode.splitText(tbMatch[0].length);
-			let newText = textNode.textContent || '';
-			// 生成头部td
-			const colNodes = this.getMarkdownCell(match);
-			// 表头数量不等于列数，不操作
-			if (colNodes.length !== colCount) return;
-			const nodes: Array<string> = [];
-			nodes.push(
-				`<tr>${colNodes.map((col) => `<td>${col}</td>`).join('')}</tr>`,
-			);
-			// 遍历剩下的行
-			const tdReg = new RegExp(
-				`^\\n*(\\|?([^\\|\\n]+)\\|?){1,${colCount}}(?:\\n|$)`,
-			);
-			while (match) {
-				match = tdReg.exec(regNode.textContent || '');
-				if (
-					!match ||
-					match[0].indexOf('|') < 0 ||
-					match[0].startsWith('\n\n')
-				)
-					break;
-				const colNodes = this.getMarkdownCell(match, colCount);
-				if (colNodes.length === 0) break;
-				if (colNodes.length < colCount) {
-					while (colCount - colNodes.length > 0) {
-						colNodes.push('');
-					}
-				}
-				nodes.push(
-					`<tr>${colNodes
-						.map((col) => `<td>${col}</td>`)
-						.join('')}</tr>`,
-				);
-				regNode = regNode.splitText(match[0].length);
-			}
-
-			const createTable = (nodes: Array<string>) => {
-				const tableNode = $(`<table>${nodes.join('')}</table>`);
-				return tableNode.get<Element>()?.outerHTML;
-			};
-			newText += createTable(nodes) + '\n';
-			newText += regNode.textContent;
-			node.text(newText);
-			parse(node);
-		};
-		parse(node);
+	destroy() {
+		const editor = this.editor;
+		editor.off('parse:html', this.parseHtml);
+		editor.off('paste:each-after', this.pasteHtml);
+		editor.off('paste:schema', this.pasteSchema);
+		editor.off('markdown-it', this.markdownIt);
 	}
 }
 

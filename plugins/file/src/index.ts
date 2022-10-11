@@ -12,24 +12,25 @@ import {
 	SchemaInterface,
 } from '@aomao/engine';
 import FileComponent from './component';
-import type { FileValue } from './component';
 import FileUploader from './uploader';
 import type { FileUploaderOptions } from './uploader';
 import locales from './locales';
-import { FileOptions } from './types';
+import { FileOptions, FileValue } from './types';
 
+const PARSE_HTML = 'parse:html';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
 export default class<T extends FileOptions = FileOptions> extends Plugin<T> {
 	static get pluginName() {
 		return 'file';
 	}
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
-		this.editor.on('paste:schema', (schema: SchemaInterface) =>
-			this.pasteSchema(schema),
-		);
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_EACH, this.pasteHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
 	}
 
 	execute(
@@ -118,7 +119,7 @@ export default class<T extends FileOptions = FileOptions> extends Plugin<T> {
 		});
 	}
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add({
 			type: 'inline',
 			name: 'span',
@@ -130,17 +131,18 @@ export default class<T extends FileOptions = FileOptions> extends Plugin<T> {
 				'data-value': '*',
 			},
 		});
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.isElement()) {
 			const type = node.attributes('data-type');
 			if (type === FileComponent.cardName) {
 				const value = node.attributes('data-value');
 				const cardValue = decodeCardValue(value);
 				if (!cardValue.url) return;
-				this.editor.card.replaceNode(
+				editor.card.replaceNode(
 					node,
 					FileComponent.cardName,
 					cardValue,
@@ -150,12 +152,13 @@ export default class<T extends FileOptions = FileOptions> extends Plugin<T> {
 			}
 		}
 		return true;
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: FileValue) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
 		root.find(
 			`[${CARD_KEY}="${FileComponent.cardName}"],[${READY_CARD_KEY}="${FileComponent.cardName}"`,
 		).each((cardNode) => {
@@ -182,8 +185,17 @@ export default class<T extends FileOptions = FileOptions> extends Plugin<T> {
 					newNode = callback(newNode, value);
 				}
 				node.replaceWith(newNode);
+				results.push(newNode);
 			} else node.remove();
 		});
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
 	}
 }
 

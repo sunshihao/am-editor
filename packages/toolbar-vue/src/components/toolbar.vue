@@ -17,8 +17,9 @@
 </template>
 <script lang="ts">
 import { defineComponent, onMounted, onUnmounted, ref, reactive } from 'vue'
-import { merge, omit } from 'lodash';
-import { isMobile } from '@aomao/engine'
+import merge from 'lodash/merge';
+import omit from 'lodash/omit';
+import { isMobile, removeUnit } from '@aomao/engine'
 import { ToolbarButtonProps, CollapseItemProps, ToolbarColorProps, ToolbarDropdownProps, GroupDataProps, ToolbarCollapseGroupProps, toolbarProps } from '../types'
 import AmGroup from './group.vue'
 import locales from '../locales';
@@ -31,12 +32,26 @@ export default defineComponent({
     components:{
         AmGroup
     },
-    props:toolbarProps,
-    
+    props: toolbarProps,
+
     setup(props){
-        let groups = ref<Array<GroupDataProps>>([])
+        let groups = ref<any>([])
+		//计算移动浏览器的视图变化
+        const calcuMobileView = () => {
+          if(!props.engine.isFocus() || props.engine.readonly) return
+
+          if(caluTimeoutRef.value) clearTimeout(caluTimeoutRef.value as NodeJS.Timeout);
+          caluTimeoutRef.value = setTimeout(() => {
+			const element = toolbarRef.value!;
+			const rect = element.getBoundingClientRect();
+			const borderTop = removeUnit(getComputedStyle(element).borderTopWidth)
+			const borderBottom = removeUnit(getComputedStyle(element).borderBottomWidth)
+			const height = rect.height || 0;
+            mobileView.top = Math.max(document.body.scrollTop, document.documentElement.scrollTop) + (window.visualViewport.height || 0) - height + borderTop + borderBottom
+          }, 10);
+        }
         const update = () => {
-            if(isMobile) calcuMobileView()
+			if(isMobile) calcuMobileView();
             const data: Array<GroupDataProps> = [];
             const defaultConfig = getToolbarDefaultConfig(props.engine);
             props.items.forEach(group => {
@@ -124,17 +139,7 @@ export default defineComponent({
         const toolbarRef = ref<HTMLDivElement | null>(null)
         const caluTimeoutRef = ref<NodeJS.Timeout | null>(null);
         const mobileView = reactive({ top: 0 })
-        //计算移动浏览器的视图变化
-        const calcuMobileView = () => {
-          if(!props.engine.isFocus() || props.engine.readonly) return
-        
-          if(caluTimeoutRef.value) clearTimeout(caluTimeoutRef.value as NodeJS.Timeout);
-          caluTimeoutRef.value = setTimeout(() => {
-            const rect = toolbarRef.value?.getBoundingClientRect()
-            const height = rect?.height || 0
-            mobileView.top = global.Math.max(document.body.scrollTop, document.documentElement.scrollTop) + (window.visualViewport.height || 0) - height
-          }, 100);
-        }
+
 
         let scrollTimer:NodeJS.Timeout;
 
@@ -169,10 +174,12 @@ export default defineComponent({
             props.engine.on("change",updateByTimeout)
             props.engine.on("blur",updateByTimeout)
             props.engine.on('focus', updateByTimeout)
+            props.engine.on('historyChange', updateByTimeout)
             if (isMobile) {
               props.engine.on('readonly', handleReadonly)
               props.engine.on('blur', hideMobileToolbar)
-              document.addEventListener('scroll', hideMobileToolbar);
+			  if(!props.engine.isFocus()) hideMobileToolbar()
+              document.addEventListener('scroll', calcuMobileView);
               visualViewport.addEventListener('resize', calcuMobileView);
               visualViewport.addEventListener('scroll', calcuMobileView);
             } else {
@@ -180,17 +187,18 @@ export default defineComponent({
             }
             updateByTimeout()
         })
-        
+
         onUnmounted(() => {
             props.engine.off("select",updateByTimeout)
             props.engine.off("change",updateByTimeout)
             props.engine.off('readonly', updateByTimeout);
             props.engine.off("blur",updateByTimeout)
             props.engine.off('focus', updateByTimeout)
+            props.engine.off('historyChange', updateByTimeout)
             if (isMobile) {
               props.engine.off('readonly', handleReadonly)
               props.engine.off('blur', hideMobileToolbar)
-              document.removeEventListener('scroll', hideMobileToolbar);
+              document.removeEventListener('scroll', calcuMobileView);
               visualViewport.removeEventListener('resize', calcuMobileView);
               visualViewport.removeEventListener('scroll', calcuMobileView);
             } else {

@@ -7,8 +7,14 @@ import type {
 	CardToolbarItemOptions,
 	ToolbarItemOptions,
 	ToolbarInterface as ToolbarBaseInterface,
+	NodeInterface,
 } from '../../types';
-import { DATA_ELEMENT, TRIGGER_CARD_ID, UI } from '../../constants';
+import {
+	DATA_CONTENTEDITABLE_KEY,
+	DATA_ELEMENT,
+	TRIGGER_CARD_ID,
+	UI,
+} from '../../constants';
 import { $ } from '../../node';
 import { isEngine, isMobile } from '../../utils';
 import Position from '../../position';
@@ -33,13 +39,14 @@ class CardToolbar implements CardToolbarInterface {
 	#hideTimeout: NodeJS.Timeout | null = null;
 	#showTimeout: NodeJS.Timeout | null = null;
 	#defaultAlign: keyof typeof placements = 'topLeft';
+	#dndNode: NodeInterface | null = null;
 
 	constructor(editor: EditorInterface, card: CardInterface) {
 		this.editor = editor;
 		this.card = card;
-		this.position = new Position(this.editor);
+		this.position = new Position(editor);
 		this.unbindEnterShow();
-		if (!isEngine(this.editor) || this.editor.readonly) {
+		if (!isEngine(editor) || editor.readonly) {
 			this.bindEnterShow();
 		}
 	}
@@ -63,8 +70,9 @@ class CardToolbar implements CardToolbarInterface {
 		this.#hideTimeout = setTimeout(() => {
 			this.hide();
 			this.#hideTimeout = null;
-			this.toolbar?.root?.off('mouseenter', this.clearHide);
-			this.toolbar?.root?.off('mouseleave', this.enterHide);
+			const toolbar = this.toolbar;
+			toolbar?.root?.off('mouseenter', this.clearHide);
+			toolbar?.root?.off('mouseleave', this.enterHide);
 		}, 200);
 	};
 
@@ -73,8 +81,9 @@ class CardToolbar implements CardToolbarInterface {
 		this.#showTimeout = setTimeout(() => {
 			this.#showTimeout = null;
 			this.show();
-			this.toolbar?.root?.on('mouseenter', this.clearHide);
-			this.toolbar?.root?.on('mouseleave', this.enterHide);
+			const toolbar = this.toolbar;
+			toolbar?.root?.on('mouseenter', this.clearHide);
+			toolbar?.root?.on('mouseleave', this.enterHide);
 		}, 200);
 	};
 
@@ -108,6 +117,7 @@ class CardToolbar implements CardToolbarInterface {
 		switch (item.type) {
 			case 'separator':
 				return {
+					key: 'separator',
 					type: 'node',
 					node:
 						item.node ||
@@ -115,6 +125,7 @@ class CardToolbar implements CardToolbarInterface {
 				};
 			case 'copy':
 				return {
+					key: 'copy',
 					type: 'button',
 					content:
 						item.content ||
@@ -128,16 +139,19 @@ class CardToolbar implements CardToolbarInterface {
 						const result = clipboard.copy(this.card.root[0], true);
 						if (result)
 							editor.messageSuccess(
+								'copy',
 								language.get<string>('copy', 'success'),
 							);
 						else
 							editor.messageError(
+								'copy',
 								language.get<string>('copy', 'error'),
 							);
 					},
 				};
 			case 'delete':
 				return {
+					key: 'delete',
 					type: 'button',
 					content:
 						item.content ||
@@ -155,6 +169,7 @@ class CardToolbar implements CardToolbarInterface {
 				};
 			case 'maximize':
 				return {
+					key: 'maximize',
 					type: 'button',
 					content:
 						item.content ||
@@ -172,6 +187,7 @@ class CardToolbar implements CardToolbarInterface {
 				};
 			case 'more':
 				return {
+					key: 'more',
 					type: 'dropdown',
 					content:
 						item.content ||
@@ -184,11 +200,14 @@ class CardToolbar implements CardToolbarInterface {
 		return;
 	}
 
-	getItems() {
-		if (!this.card.toolbar) return [];
+	getItems(): [
+		ToolbarItemOptions[],
+		(ToolbarItemOptions | CardToolbarItemOptions)[],
+	] {
+		if (!this.card.toolbar) return [[], []];
 		//获取客户端配置
 		const config = this.card.toolbar();
-		const items: Array<ToolbarItemOptions> = [];
+		const items: ToolbarItemOptions[] = [];
 		config.forEach((item) => {
 			//默认项
 			if (isCardToolbarItemOptions(item)) {
@@ -203,14 +222,14 @@ class CardToolbar implements CardToolbarInterface {
 				items.push(item);
 			}
 		});
-		return items;
+		return [items, config];
 	}
 
 	create() {
 		this.hide();
-		const items = this.getItems();
+		const [items, config] = this.getItems();
 		if (items.length > 0) {
-			const dnd: CardToolbarItemOptions | undefined = items.find(
+			const dnd: CardToolbarItemOptions | undefined = config.find(
 				(item) =>
 					isCardToolbarItemOptions(item) &&
 					(item as CardToolbarItemOptions).type === 'dnd',
@@ -225,6 +244,7 @@ class CardToolbar implements CardToolbarInterface {
 					dnd.title || language.get('dnd', 'title').toString(),
 				);
 				root.append(dndNode);
+				this.#dndNode = dndNode;
 			}
 			const toolbar = new Toolbar({
 				items,
@@ -239,15 +259,14 @@ class CardToolbar implements CardToolbarInterface {
 	}
 
 	update() {
-		const items = this.getItems();
+		const [items] = this.getItems();
 		this.toolbar?.update({
 			items,
 		});
 	}
 
 	hide() {
-		const { root } = this.editor;
-		root.find('.data-card-dnd').remove();
+		this.#dndNode?.remove();
 		this.hideCardToolbar();
 	}
 
@@ -260,74 +279,45 @@ class CardToolbar implements CardToolbarInterface {
 		this.position.destroy();
 	}
 
+	showDnd() {
+		if (!this.#dndNode) return;
+		if (this.#dndNode.length === 0) return;
+		if (!this.card.isMaximize) {
+			if (this.#dndNode.length > 0) {
+				this.#dndNode.addClass('data-card-dnd-active');
+				setTimeout(() => {
+					this.position.bind(
+						this.#dndNode!,
+						this.card.root,
+						'leftTop',
+						this.offset,
+					),
+						10;
+				});
+			}
+		} else {
+			this.#dndNode.removeClass('data-card-dnd-active');
+		}
+	}
+
 	showCardToolbar(event?: MouseEvent): void {
 		this.create();
 		const container = this.getContainer();
 		if (container && container.length > 0) {
-			const element = container.get<HTMLElement>()!;
-			element.style.left = '0px';
-			if (event) {
-				const { clientX } = event;
-				const groupElement = container.first();
-				const cardRect = this.card.root
-					.get<Element>()!
-					.getBoundingClientRect();
-				if (
-					groupElement &&
-					clientX >= cardRect.left &&
-					clientX <= cardRect.right
-				) {
-					const groupRect = groupElement
-						.get<Element>()!
-						.getBoundingClientRect();
-					const space = cardRect.width - groupRect.width;
-					if (space > 0) {
-						const left =
-							clientX - cardRect.width - groupRect.width / 2;
-						element.style.left =
-							Math.max(Math.min(left, space), 0) + 'px';
-					}
-				}
-			} else {
-				const cardRect = this.card.root
-					.get<HTMLElement>()
-					?.getBoundingClientRect() || {
-					left: 0,
-					top: 0,
-				};
-				const { root } = this.editor;
-				const rootRect = root
-					.get<HTMLElement>()
-					?.getBoundingClientRect() || {
-					left: 0,
-					top: 0,
-				};
-				const top = cardRect.top - rootRect.top;
-				const left = cardRect.left - rootRect.left;
-
-				const dnd = root.find('.data-card-dnd');
-				if (dnd.length > 0) {
-					dnd.css({
-						top: `${top}px`,
-						left: `${left - dnd.width() - 4}px`,
-					});
-					dnd.addClass('data-card-dnd-active');
-				}
-			}
-
+			this.showDnd();
+			const card = this.card;
 			container.addClass('data-toolbar-active');
 			container.attributes(
 				'toolbar-trigger-key',
-				(this.card.constructor as CardEntry).cardName,
+				(card.constructor as CardEntry).cardName,
 			);
 			if (this.toolbar) this.toolbar.show();
 			let prevAlign = this.#defaultAlign;
+			const position = this.position;
 			setTimeout(() => {
-				this.position.bind(
+				position.bind(
 					container,
-					this.card.isMaximize
-						? this.card.getCenter().first()!
-						: this.card.root,
+					card.isMaximize ? card.getCenter().first()! : card.root,
 					this.#defaultAlign,
 					this.offset,
 					(rect) => {
@@ -337,20 +327,20 @@ class CardToolbar implements CardToolbarInterface {
 							rect.align === 'bottomLeft' &&
 							rect.align !== prevAlign
 						) {
-							this.position.setOffset([
+							position.setOffset([
 								this.offset[2],
 								this.offset[3],
 							]);
 							prevAlign = rect.align;
-							this.position.update(false);
+							position.update(false);
 						} else if (
 							this.offset &&
 							rect.align === this.#defaultAlign &&
 							rect.align !== prevAlign
 						) {
-							this.position.setOffset(this.offset);
+							position.setOffset(this.offset);
 							prevAlign = rect.align;
-							this.position.update(false);
+							position.update(false);
 						}
 						prevAlign = rect.align;
 					},
@@ -363,7 +353,9 @@ class CardToolbar implements CardToolbarInterface {
 		const dndNode = $(
 			`<div ${DATA_ELEMENT}="${UI}" class="data-card-dnd" draggable="true" dnd-trigger-key="${
 				(this.card.constructor as CardEntry).cardName
-			}" drag-card-trigger="${this.card.id}" contenteditable="false">
+			}" drag-card-trigger="${
+				this.card.id
+			}" ${DATA_CONTENTEDITABLE_KEY}="false">
                 <div class="data-card-dnd-trigger">
                     ${content}
                 </div>

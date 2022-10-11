@@ -9,8 +9,8 @@ import { RangeInterface, RangePath } from '../types/range';
 import ChangeEvent from './event';
 import Parser from '../parser';
 import { ANCHOR_SELECTOR, CURSOR_SELECTOR, FOCUS_SELECTOR } from '../constants';
-import { combinText } from '../utils';
-import { TRIGGER_CARD_ID } from '../constants/card';
+import { combinText, convertMarkdown, createMarkdownIt } from '../utils';
+import { CARD_CENTER_SELECTOR, TRIGGER_CARD_ID } from '../constants/card';
 import { DATA_ID, EDITABLE_SELECTOR, UI_SELECTOR } from '../constants/root';
 import { SelectionInterface } from '../types/selection';
 import Selection from '../selection';
@@ -28,6 +28,8 @@ class ChangeModel implements ChangeInterface {
 	onChange: (trigger: 'remote' | 'local' | 'both') => void;
 	onRealtimeChange: (trigger: 'remote' | 'local') => void;
 	onSelect: (range?: RangeInterface) => void;
+	onSelectStart: () => void;
+	onSelectEnd: () => void;
 	onSetValue: () => void;
 	rangePathBeforeCommand?: { start: RangePath; end: RangePath };
 	marks: Array<NodeInterface> = [];
@@ -35,7 +37,7 @@ class ChangeModel implements ChangeInterface {
 	inlines: Array<NodeInterface> = [];
 	changeTrigger: Array<string> = [];
 	range: ChangeRangeInterface;
-	#nativeEvent: NativeEvent;
+	nativeEvent: NativeEvent;
 
 	constructor(engine: EngineInterface, options: ChangeOptions = {}) {
 		this.options = options;
@@ -44,30 +46,45 @@ class ChangeModel implements ChangeInterface {
 
 		this.onChange = this.options.onChange || function () {};
 		this.onRealtimeChange = this.options.onRealtimeChange || function () {};
-
+		let prevRange: Record<string, Node | number> | null = null;
 		this.onSelect = (range?: RangeInterface) => {
-			if (selectTimeout) clearTimeout(selectTimeout);
-			selectTimeout = setTimeout(() => {
-				const { mark, block, inline } = engine;
-				range = range || this.range.get();
-				this.marks = mark.findMarks(range);
-				this.blocks = block.findBlocks(range);
-				this.inlines = inline.findInlines(range);
-				if (this.options.onSelect) this.options.onSelect();
-			}, 50);
+			const { mark, block, inline } = engine;
+			range = range || this.range.get();
+			this.marks = mark.findMarks(range);
+			this.blocks = block.findBlocks(range);
+			this.inlines = inline.findInlines(range);
+			if (
+				prevRange?.startContainer === range.startContainer &&
+				prevRange?.startOffset === range.startOffset &&
+				prevRange?.endContainer === range.endContainer &&
+				prevRange?.endOffset === range.endOffset
+			)
+				return;
+			prevRange = {
+				startContainer: range.startContainer,
+				startOffset: range.startOffset,
+				endContainer: range.endContainer,
+				endOffset: range.endOffset,
+			};
+			if (this.options.onSelect) this.options.onSelect();
+		};
+		this.onSelectStart = () => {
+			if (this.options.onSelectStart) this.options.onSelectStart();
+		};
+		this.onSelectEnd = () => {
+			if (this.options.onSelectEnd) this.options.onSelectEnd();
 		};
 		this.onSetValue = this.options.onSetValue || function () {};
-		let selectTimeout: null | NodeJS.Timeout = null;
 		this.range = new ChangeRange(engine, {
 			onSelect: (range) => {
 				this.onSelect(range);
 			},
 		});
-		this.#nativeEvent = new NativeEvent(engine);
+		this.nativeEvent = new NativeEvent(engine);
 	}
 
 	init() {
-		this.#nativeEvent.init();
+		this.nativeEvent.init();
 	}
 
 	private _change() {
@@ -151,15 +168,22 @@ class ChangeModel implements ChangeInterface {
 		return this.event.isSelecting;
 	}
 
-	initValue(range?: RangeInterface, apply: boolean = true) {
-		const html = this.engine.container.html();
+	initValue(
+		range?: RangeInterface,
+		apply: boolean = true,
+		container = this.engine.container,
+	) {
+		const html = container.html();
 		const defaultHtml = '<p><br /></p>';
-		if (html === defaultHtml || this.engine.container.children().length > 0)
+		if (
+			html === defaultHtml ||
+			(container.get<Node>()?.childNodes.length || 0) > 0
+		)
 			return;
 		const emptyHtml = html || defaultHtml;
 		const node = $(emptyHtml);
-		if (node.children().length === 0) node.html('<br />');
-		this.engine.container.empty().append(node);
+		if (node.get<Node>()?.childNodes.length === 0) node.html('<br />');
+		container.empty().append(node);
 		const safeRange = range || this.range.get();
 
 		if (!range && apply) {
@@ -186,7 +210,7 @@ class ChangeModel implements ChangeInterface {
 				this.engine,
 				(root) => {
 					mark.removeEmptyMarks(root);
-					root.allChildren(true).forEach((child) => {
+					root.allChildren('editable').forEach((child) => {
 						if (onParse) {
 							onParse(child);
 						}
@@ -230,7 +254,7 @@ class ChangeModel implements ChangeInterface {
 
 	setHtml(html: string, callback?: (count: number) => void) {
 		const { card, container } = this.engine;
-		this.#nativeEvent.paste(
+		this.nativeEvent.paste(
 			html,
 			undefined,
 			callback,
@@ -247,19 +271,23 @@ class ChangeModel implements ChangeInterface {
 					this.engine.trigger('paste:after');
 					if (callback) callback(count);
 				});
+				this.change();
 			},
+			false,
 		);
 	}
 
 	setMarkdown(text: string, callback?: (count: number) => void) {
-		const textNode = $(document.createTextNode(text));
-		this.engine.trigger('paste:markdown-before', textNode);
-		this.engine.trigger('paste:markdown', textNode);
-		this.engine.trigger('paste:markdown-after', textNode);
+		const markdown = createMarkdownIt(this.engine, 'zero');
+		markdown.enable(['paragraph', 'html_inline', 'newline']);
+		//.disable(['strikethrough', 'emphasis', 'link', 'image', 'table', 'code', 'blockquote', 'hr', 'list', 'heading'])
+		const tokens = markdown.parse(text, {});
+		if (tokens.length === 0) return;
+		let result = convertMarkdown(this.engine, markdown, tokens);
+		if (!result) result = text;
 		const { card, container } = this.engine;
-		textNode.get<Text>()?.normalize();
-		this.#nativeEvent.paste(
-			textNode.text(),
+		this.nativeEvent.paste(
+			result,
 			undefined,
 			callback,
 			true,
@@ -275,6 +303,7 @@ class ChangeModel implements ChangeInterface {
 					this.engine.trigger('paste:after');
 					if (callback) callback(count);
 				});
+				this.change();
 			},
 		);
 	}
@@ -282,7 +311,7 @@ class ChangeModel implements ChangeInterface {
 	getOriginValue(container: NodeInterface = this.engine.container) {
 		const { schema, conversion } = this.engine;
 		return new Parser(
-			container.get<HTMLElement>()?.outerHTML || '',
+			container.clone(true),
 			this.engine,
 			undefined,
 			false,
@@ -300,14 +329,13 @@ class ChangeModel implements ChangeInterface {
 		} else {
 			let range = this.range.get();
 			let selection;
-			const container = this.engine.container.clone(true);
 			if (!range.inCard()) {
 				const path = range.toPath(true);
 				if (!path) return this.getOriginValue();
-				range = Range.fromPath(this.engine, path, true, container);
+				range = Range.fromPath(this.engine, path, true);
 				selection = range.createSelection();
 			}
-			value = this.getOriginValue(container);
+			value = this.getOriginValue();
 			selection?.move();
 		}
 		return value;
@@ -378,7 +406,7 @@ class ChangeModel implements ChangeInterface {
 		callback: (range: RangeInterface) => void = () => {},
 		followActiveMark: boolean = true,
 	) {
-		const { block, list, card, schema, mark, inline } = this.engine;
+		const { block, list, schema, mark, inline } = this.engine;
 		const nodeApi = this.engine.node;
 		range = range || this.range.toTrusty();
 		const firstBlock = block.closest(range.startNode);
@@ -391,22 +419,54 @@ class ChangeModel implements ChangeInterface {
 		const isCollapsed = range.collapsed;
 		const childNodes = fragment.childNodes;
 		const firstNode = $(fragment.firstChild || []);
+		const unwrapToFirst = () => {
+			const fragmentNode = $(fragment);
+			const first = fragmentNode.first();
+			//如果光标在文本节点，并且父级节点不是根节点，移除粘贴数据的第一个节点块级节点，让其内容接在光标所在行
+			const cloneRange = range!
+				.cloneRange()
+				.shrinkToElementNode()
+				.shrinkToTextNode();
+			const { startNode } = cloneRange;
+			if (
+				startNode.inEditor() &&
+				first &&
+				first.name === 'p' &&
+				!(first.length === 1 && first.first()?.name === 'br')
+			) {
+				// 粘贴第一行居中样式会丢失
+				if (
+					startNode.name === 'p' &&
+					nodeApi.isEmptyWidthChild(startNode)
+				) {
+					const styles = first.css();
+					startNode.css(styles);
+				}
+				nodeApi.unwrap(first);
+			}
+		};
 		if (!isCollapsed) {
 			this.delete(range, onlyOne || !isBlockLast, followActiveMark);
-		} else if (range.startNode.isText()) {
-			const inlineNode = inline.closest(range.startNode);
-			const text = range.startNode.text();
-			if (
-				inlineNode.length === 0 &&
-				!inlineNode.equal(range.startNode) &&
-				/^\u200B/.test(text)
-			)
-				range.startNode.text(text.substr(1));
+			if (nodeApi.isEmptyWidthChild(range.startNode))
+				range.shrinkToElementNode().shrinkToTextNode();
+			unwrapToFirst();
+		} else {
+			unwrapToFirst();
+			if (range.startNode.isText()) {
+				const inlineNode = inline.closest(range.startNode);
+				const text = range.startNode.text();
+				if (
+					inlineNode.length === 0 &&
+					!inlineNode.equal(range.startNode) &&
+					/^\u200B/.test(text)
+				)
+					range.startNode.text(text.substr(1));
+			}
 		}
 		let startRange: { node: NodeInterface; offset: number } | undefined =
 			undefined;
 		const apply = (range: RangeInterface) => {
-			if (startRange && startRange.node.parent()) {
+			if (startRange && startRange.node[0].isConnected) {
 				range
 					.shrinkToElementNode()
 					.setStart(startRange.node, startRange.offset);
@@ -423,6 +483,14 @@ class ChangeModel implements ChangeInterface {
 			nodeApi.isList(range.startNode) ||
 			range.startNode.closest('li').length > 0
 		) {
+			const children = range.startNode.children();
+			startRange = {
+				node: range.startNode,
+				offset:
+					children.length === 1 && children[0].nodeName === 'BR'
+						? 0
+						: range.startOffset,
+			};
 			list.insert(fragment, range);
 			apply(range);
 			return;
@@ -502,18 +570,37 @@ class ChangeModel implements ChangeInterface {
 					lastNode = node;
 				}
 
-				appendNodes.push(node);
 				if (prev) {
 					prev.after(node);
 				} else {
+					if (nodeApi.isInline(range.startNode)) {
+						range.setStartAfter(range.startNode);
+						range.collapse(true);
+					}
 					nodeApi.insert(node, range, true);
+					if (nodeApi.isInline(node)) {
+						range.setEndAfter(node);
+						range.collapse(false);
+					}
 				}
-				prev = node;
-				if (!next) {
+				if (node.get()?.isConnected) appendNodes.push(node);
+				if (!nodeApi.isBlock(node) && !next?.isText()) {
+					if (prev) {
+						range.select(node, true).collapse(false);
+					}
+					prev = null;
+				} else {
+					prev = node;
+				}
+				if (
+					!next &&
+					node.get()?.isConnected &&
+					!nodeApi.isInline(node)
+				) {
 					range.select(node, true).collapse(false);
 				}
 				// 被删除了重新设置开始节点位置
-				if (startRange && !startRange.node[0].parentNode) {
+				if (startRange && !startRange.node[0].isConnected) {
 					const parent = node.parent();
 					if (parent) {
 						startRange = {
@@ -538,8 +625,8 @@ class ChangeModel implements ChangeInterface {
 				});
 			}
 			//range.shrinkToElementNode().collapse(false);
-			const component = card.find(range.startNode);
-			if (component) component.focus(range, false);
+			// const component = card.find(range.startNode);
+			// if (component) component.focus(range, false);
 		}
 		const getFirstChild = (node: NodeInterface) => {
 			let child = node.first();
@@ -639,7 +726,7 @@ class ChangeModel implements ChangeInterface {
 		range?: RangeInterface,
 		callback?: (count: number) => void,
 	) {
-		this.#nativeEvent.paste(html, range, callback, true);
+		this.nativeEvent.paste(html, range, callback, true);
 	}
 
 	/**
@@ -693,7 +780,7 @@ class ChangeModel implements ChangeInterface {
 				else child.remove();
 				if (isBreak) {
 					child = undefined;
-					return;
+					break;
 				}
 				child = next;
 			}
@@ -718,20 +805,46 @@ class ChangeModel implements ChangeInterface {
 				}
 			}
 		}
-		// 先删除范围内的所有内容
-		safeRange.extractContents();
-		if (
-			safeRange.startNode.isEditable() &&
-			safeRange.startNode.children().length === 0
-		) {
-			safeRange.startNode.html('<p><br /></p>');
-		}
-		safeRange.collapse(true);
-		// 后续处理
-		let { startNode } = safeRange
+		const endContentNode = safeRange
+			.cloneRange()
 			.shrinkToElementNode()
 			.shrinkToTextNode()
-			.enlargeToElementNode();
+			.getEndOffsetNode();
+		// 先删除范围内的所有内容
+		safeRange.extractContents();
+
+		let { startNode } = safeRange;
+		if (
+			startNode.isEditable() &&
+			startNode.get<Node>()?.childNodes.length === 0
+		) {
+			startNode.html('<p><br /></p>');
+			this.engine.nodeId.generate(startNode);
+		}
+		// 删除了卡片内的节点，就把卡片删除
+		startNode = safeRange
+			.shrinkToElementNode()
+			.shrinkToTextNode()
+			.enlargeToElementNode().startNode;
+		if (
+			startNode.isCard() &&
+			startNode.find(CARD_CENTER_SELECTOR).length === 0
+		)
+			card.remove(startNode);
+		safeRange.collapse(true);
+		// 后续处理
+		startNode = safeRange
+			.shrinkToElementNode()
+			.shrinkToTextNode()
+			.enlargeToElementNode().startNode;
+		// 删除后的之前开始选中节点是空节点就删除掉
+		if (
+			block.isElement() &&
+			!block.equal(startNode) &&
+			block.get<Element>()!.childNodes.length === 0
+		) {
+			block.remove();
+		}
 		// 只删除了文本，不做处理
 		if (startNode.isText() || !block.inEditor()) {
 			if (this.isEmpty()) this.initValue(safeRange);
@@ -739,17 +852,23 @@ class ChangeModel implements ChangeInterface {
 			return;
 		}
 		let isRemoveStartNode = false;
-		if (isMoreLine && startNode.children().length === 0) {
+		if (isMoreLine && startNode.get<Node>()?.childNodes.length === 0) {
 			const selection = safeRange.createSelection();
 			startNode.remove();
-			selection.move();
+			if (
+				selection.anchor?.get<Node>()?.isConnected &&
+				selection.focus?.get<Node>()?.isConnected
+			) {
+				selection.move();
+			}
 			isRemoveStartNode = true;
 			startNode = safeRange.startNode;
 		}
 
 		const prevNode = block;
-		const nextNode = startNode;
-		let isEmptyNode = startNode.children().length === 0;
+		const nextNode =
+			endContentNode && endContentNode.isConnected ? startNode : null;
+		let isEmptyNode = startNode.get<Node>()?.childNodes.length === 0;
 		if (!isEmptyNode && startNode.length > 0 && startNode.inEditor()) {
 			if (
 				startNode[0].childNodes.length === 1 &&
@@ -760,20 +879,22 @@ class ChangeModel implements ChangeInterface {
 				isEmptyNode = true;
 		}
 		if (isEmptyNode && nodeApi.isBlock(startNode) && startNode.inEditor()) {
-			let html = nodeApi.getBatchAppendHTML(activeMarks, '<br />');
-			if (startNode.isEditable()) {
-				html = `<p>${html}</p>`;
+			if (nodeApi.isList(startNode)) {
+				startNode.remove();
+			} else {
+				let html = nodeApi.getBatchAppendHTML(activeMarks, '<br />');
+				if (startNode.isEditable()) {
+					html = `<p>${html}</p>`;
+				}
+				startNode.append($(html));
+				const br = startNode.find('br');
+				const parent = br.parent();
+				if (parent && nodeApi.isMark(parent)) {
+					nodeApi.replace(br, $('\u200b', null));
+				}
+				safeRange.select(startNode, true);
 			}
-			startNode.append($(html));
-			const br = startNode.find('br');
-			const parent = br.parent();
-			if (parent && nodeApi.isMark(parent)) {
-				nodeApi.replace(br, $('\u200b', null));
-			}
-			safeRange
-				.select(startNode, true)
-				.shrinkToElementNode()
-				.shrinkToTextNode();
+			safeRange.shrinkToElementNode().shrinkToTextNode();
 			safeRange.collapse(false);
 			if (this.isEmpty()) this.initValue(safeRange);
 			if (!range) this.apply(safeRange);
@@ -836,9 +957,11 @@ class ChangeModel implements ChangeInterface {
 		if (
 			prevNode &&
 			nextNode &&
+			nextNode.length > 0 &&
 			nodeApi.isBlock(prevNode) &&
 			nodeApi.isBlock(nextNode) &&
 			!prevNode.equal(nextNode) &&
+			!prevNode.parent()?.equal(nextNode) &&
 			nextNode.inEditor()
 		) {
 			deepMergeNode(
@@ -880,12 +1003,18 @@ class ChangeModel implements ChangeInterface {
 				safeRange.collapse(false);
 			}
 		}
-		if (nodeApi.isBlock(startNode) && startNode.children().length === 0) {
+		if (
+			nodeApi.isBlock(startNode) &&
+			startNode.get<Node>()?.childNodes.length === 0
+		) {
 			startNode.html('<br />');
 		}
 
 		if (isRemoveStartNode) {
-			if (nodeApi.isBlock(prevNode) && prevNode.children().length === 0) {
+			if (
+				nodeApi.isBlock(prevNode) &&
+				prevNode.get<Node>()?.childNodes.length === 0
+			) {
 				prevNode.html('<br />');
 			}
 			if (prevNode.inEditor())
@@ -960,11 +1089,13 @@ class ChangeModel implements ChangeInterface {
 		// 前面是 void 节点
 		if (nodeApi.isVoid(prevBlock)) {
 			prevBlock.remove();
+			this.apply(range);
 			return;
 		}
 		// 前面是空段落
 		if (nodeApi.isRootBlock(prevBlock) && nodeApi.isEmpty(prevBlock)) {
 			prevBlock.remove();
+			this.apply(range);
 			return;
 		}
 
@@ -983,7 +1114,7 @@ class ChangeModel implements ChangeInterface {
 			first?.remove();
 		} else if (
 			prevBlock &&
-			prevBlock.children().length === 1 &&
+			prevBlock.get<Node>()?.childNodes.length === 1 &&
 			prevBlock.first()?.name === 'br'
 		) {
 			prevBlock.first()?.remove();

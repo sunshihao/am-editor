@@ -1,3 +1,4 @@
+import { EmbedOptions, EmbedRenderBeforeEvent } from '@/types';
 import {
 	$,
 	Card,
@@ -11,18 +12,8 @@ import {
 	sanitizeUrl,
 	isEngine,
 } from '@aomao/engine';
+import { EmbedValue } from '..';
 import './index.css';
-
-export interface EmbedValue extends CardValue {
-	url?: string;
-	height?: number;
-	collapsed?: boolean;
-	ico?: string;
-	title?: string;
-	isResize?: boolean;
-}
-
-export type EmbedRenderBeforeEvent = (url: string) => EmbedValue;
 
 class EmbedComponent<V extends EmbedValue = EmbedValue> extends Card<V> {
 	renderBefore?: EmbedRenderBeforeEvent;
@@ -83,52 +74,57 @@ class EmbedComponent<V extends EmbedValue = EmbedValue> extends Card<V> {
 	}
 
 	toolbar() {
-		if (isEngine(this.editor)) {
-			const items: Array<CardToolbarItemOptions | ToolbarItemOptions> =
-				[];
-			const value = this.getValue();
-			if (value?.url) {
-				items.push(
-					{
-						type: 'button',
-						content: '<span class="data-icon data-icon-expand" />',
-						title: this.editor.language.get<string>(
-							'embed',
-							'expand',
-						),
-						onClick: () => this.expand(),
-					},
-					{
-						type: 'button',
-						content:
-							'<span class="data-icon data-icon-compact-display" />',
-						title: this.editor.language.get<string>(
-							'embed',
-							'collapse',
-						),
-						onClick: () => this.collapse(),
-					},
-				);
+		const editor = this.editor;
+		const getItems = () => {
+			if (isEngine(editor)) {
+				const items: Array<
+					CardToolbarItemOptions | ToolbarItemOptions
+				> = [];
+				const value = this.getValue();
+				if (value?.url) {
+					items.push(
+						{
+							key: 'expand',
+							type: 'button',
+							content:
+								'<span class="data-icon data-icon-expand" />',
+							title: editor.language.get<string>(
+								'embed',
+								'expand',
+							),
+							onClick: () => this.expand(),
+						},
+						{
+							key: 'collapse',
+							type: 'button',
+							content:
+								'<span class="data-icon data-icon-compact-display" />',
+							title: editor.language.get<string>(
+								'embed',
+								'collapse',
+							),
+							onClick: () => this.collapse(),
+						},
+					);
+				}
+				if (!editor.readonly) {
+					items.unshift(
+						{ key: 'dnd', type: 'dnd' },
+						{ key: 'copy', type: 'copy' },
+						{ key: 'delete', type: 'delete' },
+						{ key: 'separator', type: 'separator' },
+					);
+				}
+				return items;
 			}
-			if (!this.editor.readonly) {
-				items.unshift(
-					{
-						type: 'dnd',
-					},
-					{
-						type: 'copy',
-					},
-					{
-						type: 'delete',
-					},
-					{
-						type: 'separator',
-					},
-				);
-			}
-			return items;
+			return [];
+		};
+		const options =
+			editor.plugin.findPlugin<EmbedOptions>('embed')?.options;
+		if (options?.cardToolbars) {
+			return options.cardToolbars(getItems(), this.editor);
 		}
-		return [];
+		return getItems();
 	}
 
 	handleInputKeydown(e: KeyboardEvent) {
@@ -136,7 +132,8 @@ class EmbedComponent<V extends EmbedValue = EmbedValue> extends Card<V> {
 	}
 
 	handleSubmit = () => {
-		const locales = this.editor.language.get('embed');
+		const editor = this.editor;
+		const locales = editor.language.get('embed');
 		const center = this.getCenter();
 		const url = sanitizeUrl(
 			center.find('[data-role="url"]').get<HTMLInputElement>()?.value ||
@@ -160,7 +157,7 @@ class EmbedComponent<V extends EmbedValue = EmbedValue> extends Card<V> {
 			this.render();
 			super.didRender();
 		} else {
-			this.editor.messageError(locales['addressInvalid']);
+			editor.messageError('embed', locales['addressInvalid']);
 		}
 	};
 
@@ -175,9 +172,9 @@ class EmbedComponent<V extends EmbedValue = EmbedValue> extends Card<V> {
                         <input data-role="url" placeholder="${
 							placeholder || locales['placeholder']
 						}" spellcheck="false" class="data-embed-input" value="" autocomplete="off"/>
-                    </span>      
+                    </span>
                     <span class="data-embed-button">
-                        <button class="data-embed-ui-button" data-role="submit">
+                        <button type="button" class="data-embed-ui-button" data-role="submit">
                             <span>${locales['submit']}</span>
                         </button>
                     </span>

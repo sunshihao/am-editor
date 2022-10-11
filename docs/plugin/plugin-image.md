@@ -24,7 +24,7 @@ The main functions of the `ImageUploader` plugin: select images, upload images, 
 `onBeforeRender` Modify the image address before the image is rendered
 
 ```ts
-onBeforeRender?: (status:'uploading' |'done', src: string) => string;
+onBeforeRender?: (status:'uploading' |'done', src: string, editor: EditorInterface) => string;
 ```
 
 `enableResizer` Whether the image size can be modified by dragging, the default is true
@@ -32,6 +32,8 @@ onBeforeRender?: (status:'uploading' |'done', src: string) => string;
 `enableTypeSwitch` whether to enable block inline mode switching, the default is true
 
 `defaultType` sets the default image card type, the default is 'inline'
+
+`maxHeight` sets the maximum height of the default image display, which is not limited by default
 
 ## `ImageUploader` optional
 
@@ -96,7 +98,7 @@ file:{
     /**
      * Additional data upload
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * The name of the FormData when the image file is uploaded, the default file
      */
@@ -162,7 +164,7 @@ remote:{
     /**
      * Additional data upload
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * The name of the request parameter when the image file is lost when uploading, the default url
      */
@@ -188,29 +190,8 @@ parse?: (
     response: any,
 ) => {
     result: boolean;
-    data: string;
+   	data: { url: string };
 };
-```
-
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-ImageUploader plug-in markdown syntax is `/^!\[([^\]]{0,})\]\((https?:\/\/[^\)]{5,})\)$/`
-
-After obtaining the image address, it will use the `remote` configuration to `POST` the image address to the server, the request parameter is `url`, and the server will use the image address to download and save the new image address and return it
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        [ImageUploader.pluginName]:{
-            //Close markdown
-            markdown:false
-        }
-    }
- })
 ```
 
 ## Command

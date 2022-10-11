@@ -1,6 +1,6 @@
 {
   "name": "@aomao/plugin-link-vue",
-  "version": "2.7.36",
+  "version": "2.9.32",
   "description": "> TODO: description",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -24,12 +24,17 @@
     "url": "https://github.com/yanmao-cc/am-editor/issues"
   },
   "dependencies": {
-    "@aomao/engine": "^2.7.36",
-    "@babel/runtime": "^7.13.10",
-    "ant-design-vue": "^2.2.6",
-    "vue": "^3.2.9"
+    "@babel/runtime": "^7.13.10"
   },
   "devDependencies": {
-    "@vue/compiler-sfc": "^3.2.9"
+    "@types/markdown-it": "^12.2.3",
+    "@vue/compiler-sfc": "^3.2.9",
+    "ant-design-vue": ">=2.2.6",
+    "vue": "^3.2.9"
+  },
+  "peerDependencies": {
+    "@aomao/engine": ">=2.9",
+    "ant-design-vue": ">=2.2.6",
+    "vue": ">=3.2.9"
   }
 }

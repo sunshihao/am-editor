@@ -11,6 +11,8 @@ export interface FontsizeOptions extends PluginOptions {
 	filter?: (fontSize: string) => string | boolean;
 }
 
+const PASTE_EACH = 'paste:each';
+
 export default class<
 	T extends FontsizeOptions = FontsizeOptions,
 > extends MarkPlugin<T> {
@@ -35,19 +37,22 @@ export default class<
 
 	#styleName = 'font-size';
 
+	defaultSize =
+		this.options.defaultSize ||
+		this.editor.container.css('font-size') ||
+		'14px';
+
 	init() {
 		super.init();
-		if (isEngine(this.editor)) {
-			this.editor.on('paste:each', (node) => this.pasteEach(node));
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.on(PASTE_EACH, this.pasteEach);
 		}
+		if (this.options.defaultSize)
+			editor.container.css('font-size', this.defaultSize);
 	}
 
-	isTrigger(
-		size: string,
-		defaultSize: string = this.options.defaultSize ||
-			this.editor.container.css('font-size') ||
-			'14px',
-	) {
+	isTrigger(size: string, defaultSize: string = this.defaultSize) {
 		return size !== defaultSize;
 	}
 
@@ -65,13 +70,13 @@ export default class<
 		return value;
 	}
 
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
 		if (node.name === this.tagName) {
 			const source = node.css(this.#styleName);
 			if (!source) return;
 			const fontsize = this.convertToPX(source);
 			if (source.endsWith('pt')) node.css(this.#styleName, fontsize);
-			if (fontsize !== this.options.defaultSize) {
+			if (fontsize !== this.defaultSize) {
 				const { filter } = this.options;
 				if (filter) {
 					const result = filter(fontsize);
@@ -84,6 +89,13 @@ export default class<
 				const nodeApi = this.editor.node;
 				if (!nodeApi.isMark(node)) nodeApi.unwrap(node);
 			}
+		}
+	};
+
+	destroy(): void {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off(PASTE_EACH, this.pasteEach);
 		}
 	}
 }

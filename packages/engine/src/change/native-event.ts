@@ -24,7 +24,7 @@ import { $ } from '../node';
 import Parser, { TextParser } from '../parser';
 import Paste from './paste';
 import { CardActiveTrigger, CardType } from '../card/enum';
-import { escape } from '../utils';
+import { convertMarkdown, createMarkdownIt, escape } from '../utils';
 
 class NativeEvent {
 	engine: EngineInterface;
@@ -56,10 +56,26 @@ class NativeEvent {
 				let cardRightText = cardRight.text().replace(/\u200B/g, '');
 				if (cardRightText) {
 					cardRightText = escape(cardRightText);
-					range.setEndAfter(card.root);
-					range.collapse(false);
+					// 卡片有样式，并且后面没有节点了
+					const next = card.root.next();
+					const marks = card.queryMarks ? card.queryMarks(true) : [];
+					if (marks.length > 0) {
+						let newNode = marks[marks.length - 1];
+						newNode.append(cardRightText);
+						for (let i = marks.length - 2; i >= 0; i--) {
+							newNode = marks[i].append(newNode);
+						}
+						card.root.after(newNode);
+						range.select(newNode, true).collapse(false);
+					} else if (next && (next.isText() || node.isMark(next))) {
+						range.select(next, true).collapse(true);
+						node.insertText(cardRightText, range);
+					} else {
+						range.setEndAfter(card.root);
+						range.collapse(false);
+						node.insertText(cardRightText, range);
+					}
 					node.html(cardRight, '&#8203;');
-					node.insertText(cardRightText, range);
 					change.apply(range);
 				}
 			} else change.range.toTrusty(range);
@@ -71,13 +87,14 @@ class NativeEvent {
 		if (startNode.isText() && parent && node.isMark(parent)) {
 			let textNode = startNode.get<Text>()!;
 			let text = startNode.text();
-
+			const { inputType } = event;
 			//mark 插件禁止跟随样式时，将输入字符设置到mark标签外
 			//输入光标在mark节点末尾
 			if (
 				startOffset === text.length &&
 				event.data &&
-				event.inputType.indexOf('insert') === 0
+				inputType &&
+				inputType.indexOf('insert') === 0
 			) {
 				let markParent: NodeInterface | undefined = parent;
 				let markTops: Array<NodeInterface> = [];
@@ -158,7 +175,8 @@ class NativeEvent {
 			else if (
 				event.data &&
 				startOffset === event.data.length &&
-				event.inputType.indexOf('insert') === 0
+				inputType &&
+				inputType.indexOf('insert') === 0
 			) {
 				let markParent: NodeInterface | undefined = parent;
 				let markTops: Array<NodeInterface> = [];
@@ -245,15 +263,38 @@ class NativeEvent {
 			}
 		}
 	}
-
+	private prevSelection: {
+		anchorNode: Node | null;
+		anchorOffset: number;
+		focusNode: Node | null;
+		focusOffset: number;
+	} | null = null;
 	handleSelectionChange() {
 		const { change, container, card } = this.engine;
 		if (change.isComposing()) return;
 		const { window } = container;
 		const selection = window?.getSelection();
-
+		if (
+			this.prevSelection?.anchorNode === selection?.anchorNode &&
+			this.prevSelection?.anchorOffset === selection?.anchorOffset &&
+			this.prevSelection?.focusNode === selection?.focusNode &&
+			this.prevSelection?.focusOffset === selection?.focusOffset
+		)
+			return;
+		this.prevSelection = selection
+			? {
+					anchorNode: selection.anchorNode,
+					anchorOffset: selection.anchorOffset,
+					focusNode: selection.focusNode,
+					focusOffset: selection.focusOffset,
+			  }
+			: null;
 		if (selection && selection.anchorNode) {
 			const range = Range.from(this.engine, selection)!;
+			// 不在编辑器内不处理
+			if (!range.commonAncestorNode.inEditor(container)) return;
+
+			change.onSelect();
 			// 判断当前光标是否包含卡片或者在卡片内部
 			let containsCard =
 				range.containsCard() ||
@@ -319,35 +360,39 @@ class NativeEvent {
 			const range = change.range.get();
 			this.repairInput(event, range);
 			change.range.select(range);
-			change.onSelect();
+			change.onSelect(range);
 			change.change();
 		});
-		let selectionChangeTimeout: NodeJS.Timeout | undefined = undefined;
+
 		change.event.onDocument('selectionchange', () => {
-			if (selectionChangeTimeout) clearTimeout(selectionChangeTimeout);
-			selectionChangeTimeout = setTimeout(
-				() => this.handleSelectionChange(),
-				50,
-			);
+			this.handleSelectionChange();
 		});
-		change.event.onSelect((event: any) => {
-			const range = change.range.get();
-			if (range.startNode.closest(ROOT_SELECTOR).length === 0) return;
-			if (range.collapsed && range.containsCard()) {
-				change.range.toTrusty(range);
-			}
-			change.range.select(range);
-			// 方向键选择不触发 card 激活
-			if (
-				!isHotkey('shift+left', event) &&
-				!isHotkey('shift+right', event) &&
-				!isHotkey('shift+up', event) &&
-				!isHotkey('shift+down', event)
-			) {
-				card.activate(range.commonAncestorNode);
-			}
-			change.onSelect();
-		});
+		change.event.onSelect(
+			(event: any) => {
+				const range = change.range.get();
+				if (range.startNode.closest(ROOT_SELECTOR).length === 0) return;
+				if (range.collapsed && range.containsCard()) {
+					change.range.toTrusty(range);
+				}
+				change.range.select(range);
+				// 方向键选择不触发 card 激活
+				if (
+					!isHotkey('shift+left', event) &&
+					!isHotkey('shift+right', event) &&
+					!isHotkey('shift+up', event) &&
+					!isHotkey('shift+down', event)
+				) {
+					card.activate(range.commonAncestorNode);
+				}
+				change.onSelect(range);
+			},
+			() => {
+				change.onSelectStart();
+			},
+			() => {
+				change.onSelectEnd();
+			},
+		);
 
 		change.event.onDocument('mousedown', (e: MouseEvent) => {
 			if (!e.target) return;
@@ -386,78 +431,48 @@ class NativeEvent {
 				this.engine.readonly
 			)
 				return;
-			event.stopPropagation();
 			const data = clipboard.write(event, undefined);
 			if (data) {
+				event.stopPropagation();
 				clipboard.cut();
 				change.change();
 			}
 		});
 
-		const parserMarkdown = (text: string) => {
-			const textNode = $(document.createTextNode(text));
-			const result = this.engine.trigger(
-				'paste:markdown-check',
-				textNode,
-			);
-			return {
-				node: textNode,
-				result,
-			};
+		const convertMD = (text: string) => {
+			change.cacheRangeBeforeCommand();
+			const markdown = createMarkdownIt(this.engine, 'zero');
+			markdown.enable(['paragraph', 'html_inline', 'newline']);
+			//.disable(['strikethrough', 'emphasis', 'link', 'image', 'table', 'code', 'blockquote', 'hr', 'list', 'heading'])
+			const tokens = markdown.parse(text, {});
+			if (tokens.length === 0) return;
+			return convertMarkdown(this.engine, markdown, tokens);
 		};
 
-		const pasteMarkdown = async (html: string, text: string) => {
+		const pasteMarkdown = async (text: string) => {
 			// 先解析text
-			let { node, result } = parserMarkdown(text);
-			// 没有 markdown，尝试解析 html
-			if (result !== false) {
-				// 先解析html
-				let parser = new Parser(html, this.engine);
-				const schema = this.engine.schema.clone();
-				//转换Text，没那么严格，加入以下规则，以免被过滤掉，并且 div后面会加换行符
-				schema.add([
-					{
-						name: 'span',
-						type: 'mark',
-					},
-					{
-						name: 'div',
-						type: 'block',
-					},
-				]);
-				// 不遍历卡片，不对 ol 节点格式化，以免复制列表就去提示检测到markdown
-				let parserText = parser.toText(schema, false, false);
-				// html中没有解析到文本
-				if (!parserText) {
-					parser = new Parser(text, this.engine);
-					parserText = parser.toText(schema);
-				}
-				const htmlResult = parserMarkdown(parserText);
-				node = htmlResult.node;
-				result = htmlResult.result;
+			const result = convertMD(text);
+			if (result === null) return;
+			const handlePaste = () => {
+				this.engine.history.saveOp();
+				change.cacheRangeBeforeCommand();
+				this.paste(result!, this.#lastePasteRange, undefined, false);
+			};
+			if (this.engine.options.markdown?.mode !== 'confirm') {
+				handlePaste();
+				return;
 			}
-			if (result !== false) return;
 			// 提示是否要转换
 			this.engine
 				.messageConfirm(
+					'markdown',
 					this.engine.language.get<string>('checkMarkdown', 'title'),
 				)
 				.then(() => {
-					change.cacheRangeBeforeCommand();
-					this.engine.trigger('paste:markdown-before', node);
-					this.engine.trigger('paste:markdown', node);
-					this.engine.trigger('paste:markdown-after', node);
-
-					node.get<Text>()?.normalize();
-					this.paste(
-						node.text(),
-						this.#lastePasteRange,
-						undefined,
-						false,
-					);
+					handlePaste();
 				})
 				.catch((err) => {
-					if (err) this.engine.messageError(err);
+					if (err) this.engine.messageError('markdown', err);
 				});
 		};
 
@@ -480,12 +495,6 @@ class NativeEvent {
 							-1
 					) {
 						source = html;
-					} else if (
-						text &&
-						/^https?:\/\/\S+$/.test(text.toLowerCase().trim())
-					) {
-						const value = escape(text);
-						source = `<a href="${value}" target="_blank">${value}</a>`;
 					} else if (html) {
 						source = html;
 					} else if (text) {
@@ -498,10 +507,103 @@ class NativeEvent {
 			if (files.length === 0) {
 				change.cacheRangeBeforeCommand();
 				this.paste(source);
-				setTimeout(() => {
-					// 如果 text 和 html 都有，就解析 text
-					pasteMarkdown(source, text || '');
-				}, 200);
+				const markdown = this.engine.options.markdown || {};
+				if (markdown.mode !== false) {
+					// 单独的链接不做解析，由 paste:each 触发执行
+					if (
+						!markdown.check &&
+						text &&
+						!/^https?:\/\/\S+$/i.test(text.trim())
+					) {
+						if (!text) return;
+						// 没有 html，直接转换 markdown
+						if (!html) {
+							setTimeout(() => {
+								pasteMarkdown(text);
+							}, 0);
+							return;
+						}
+						// 检测 text 中是否有markdown语法
+						const rows = text.split(/\r\n|\n/) || '';
+						// 所有有效的段落
+						let rowCount = 0;
+						// 有语法的段落
+						let validCount = 0;
+						let isCodeblock = false;
+						// 有序列表的markdown 对比html中的有序列表节点，如果不存在节点才算作markdown
+						const root = new DOMParser().parseFromString(
+							html,
+							'text/html',
+						);
+						const lis = root.querySelectorAll('li');
+						const orderTexts: string[] = [];
+						lis.forEach((li) => {
+							const text = li.textContent ?? '';
+							if (
+								li.parentElement?.nodeName === 'OL' ||
+								/\d\.\s+/.test(text)
+							) {
+								orderTexts.push(text);
+							}
+						});
+						for (let i = 0; i < rows.length; i++) {
+							const rowText = rows[i];
+							if (!rowText.trim()) continue;
+							if (rowText.startsWith('```')) {
+								if (!isCodeblock) {
+									isCodeblock = true;
+									validCount++;
+									rowCount++;
+								} else {
+									isCodeblock = false;
+								}
+
+								continue;
+							}
+							if (isCodeblock) continue;
+							rowCount++;
+
+							if (
+								/^(#|\*|-|\+|\[ \]|\[x\]|>){1,}\s+/.test(
+									rowText,
+								)
+							) {
+								validCount++;
+							} else if (/^\d\.\s+/.test(rowText)) {
+								if (
+									!orderTexts.includes(rowText) &&
+									!orderTexts.includes(
+										rowText.replace(/^\d\./, '').trim(),
+									)
+								) {
+									validCount++;
+								}
+							} else if (/^(---|\*\*\*|\+\+\+)/.test(rowText)) {
+								validCount++;
+							} else if (
+								/(\*|~|\^|_|\`|\]\(https?:\/\/)/.test(rowText)
+							) {
+								validCount++;
+							}
+						}
+						if (
+							validCount > 0 &&
+							(rowCount === 0 || validCount / rowCount > 0.5)
+						) {
+							setTimeout(() => {
+								pasteMarkdown(text);
+							}, 0);
+						}
+					} else if (markdown.check) {
+						markdown
+							.check(text ?? '', html ?? '')
+							.then((result) => {
+								if (!!result) {
+									pasteMarkdown(result);
+								}
+							});
+					}
+				}
 			}
 		});
 
@@ -542,10 +644,11 @@ class NativeEvent {
 			callback?: (range: RangeInterface) => void,
 			followActiveMark?: boolean,
 		) => void,
+		forceGenerateAllId = true,
 	) {
 		const { change } = this.engine;
 		const fragment = new Paste(source, this.engine).normalize(
-			insert === undefined,
+			forceGenerateAllId,
 		);
 		this.engine.trigger('paste:before', fragment);
 		if (insert) insert(fragment, range, undefined, followActiveMark);
@@ -558,7 +661,10 @@ class NativeEvent {
 					const cloneRange = range.cloneRange();
 					const { endNode } = cloneRange;
 					let cardId = '';
-					if (endNode.isCard() && endNode.children().length === 0) {
+					if (
+						endNode.isCard() &&
+						endNode.get<Node>()?.childNodes.length === 0
+					) {
 						cloneRange.setEndAfter(endNode);
 						cardId = endNode.attributes(DATA_ID);
 					}

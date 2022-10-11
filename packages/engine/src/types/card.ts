@@ -53,7 +53,14 @@ export interface CardToolbarInterface {
 	 * @param offset 偏移量 [tx,ty,bx,by]
 	 */
 	setOffset(offset: Array<number>): void;
+	/**
+	 * 设置默认对齐方式
+	 * @param align
+	 */
 	setDefaultAlign(align: Placement): void;
+	/**
+	 * 更新位置
+	 */
 	update(): void;
 	/**
 	 * 销毁
@@ -63,15 +70,18 @@ export interface CardToolbarInterface {
 
 export type CardToolbarItemOptions =
 	| {
+			key?: string;
 			type: 'dnd';
 			content?: string;
 			title?: string;
 	  }
 	| {
+			key?: string;
 			type: 'separator';
 			node?: NodeInterface;
 	  }
 	| {
+			key?: string;
 			type: 'delete' | 'maximize' | 'copy';
 			disabled?: boolean;
 			content?: string;
@@ -79,6 +89,7 @@ export type CardToolbarItemOptions =
 			onClick?: (event: MouseEvent, node: NodeInterface) => void;
 	  }
 	| {
+			key?: string;
 			type: 'more';
 			disabled?: boolean;
 			content?: string;
@@ -197,7 +208,7 @@ export interface CardInterface<T extends CardValue = CardValue> {
 	 * 通过 data-card-element 的值，获取当前Card内的 DOM 节点
 	 * @param key key
 	 */
-	findByKey(key: string): NodeInterface;
+	findByKey(key: string): NodeInterface | undefined;
 	/**
 	 * 获取卡片的中心节点
 	 */
@@ -299,6 +310,11 @@ export interface CardInterface<T extends CardValue = CardValue> {
 	 */
 	onChange?(trigger: 'remote' | 'local', node: NodeInterface): void;
 	/**
+	 * 卡片值变更时，返回false则阻止写入历史记录
+	 * @param value
+	 */
+	writeHistoryOnValueChange?(value: T): void | false;
+	/**
 	 * 设置卡片值
 	 * @param value 值
 	 */
@@ -348,11 +364,6 @@ export interface CardInterface<T extends CardValue = CardValue> {
 	 * 渲染后触发
 	 */
 	didRender(): void;
-	/**
-	 * 更新可编辑器卡片协同选择区域
-	 * @param range 光标
-	 */
-	updateBackgroundSelection?(range: RangeInterface): void;
 	/**
 	 * 渲染可编辑器卡片协同选择区域
 	 * @param node 背景画布
@@ -577,6 +588,7 @@ export interface CardModelInterface {
 	/**
 	 * 移除卡片
 	 * @param selector 卡片选择器
+	 * @param hasModify 是否触发修改事件
 	 */
 	remove(selector: NodeInterface | Node | string, hasModify?: boolean): void;
 	/**
@@ -646,6 +658,9 @@ export interface CardModelInterface {
 		hasModify: boolean,
 	): void;
 
+	/**
+	 * 销毁
+	 */
 	destroy(): void;
 }
 

@@ -1,24 +1,4 @@
-# 招聘：高级前端工程师
-
-岗位要求 ：
-
-1、熟练掌握 JavaScript、HTML、CSS 等原生前端基础技术，熟悉相关规范。
-
-2、熟悉 React 技术栈，了解渲染流程和机制。
-
-3、理解 MVC 设计模式、事件驱动机制、不可变数据结构。
-
-4、有使用 Websocket、Canvas 经验。
-
-5、了解 Webpack、Rollup 等构建工具的使用和配置。
-
-6、了解不同浏览器特性，能够更好的解决兼容性和性能问题。
-
-7、具备强烈的技术进取心，有良好的沟通与合作精神，拥有优秀的问题分析及解决能力。
-
-8、 熟悉富文本原理，有真实研发经验者优先。
-
-**简历发送到：me@aomao.com**
+> 过去两年中，`am-editor` 编辑器基于 `contenteditable` 属性上做了很多功能和扩展，也遇到了很多问题。当然，有些问题从一开始的架构设计上就注定了的。所以，现在大胆一些，尝试抛弃`contenteditable`属性，使用自绘光标的模式开发的下一个版本的[富文本编辑器](https://github.com/editablejs/editable)。
 
 # am-editor
 
@@ -56,11 +36,11 @@
 
 `广告`：[科学上网，方便、快捷的上网冲浪](https://xiyou4you.us/r/?s=18517120) 稳定、可靠，访问 Github 或者其它外网资源很方便。
 
-**`Vue2`** 案例 [https://github.com/zb201307/am-editor-vue2](https://github.com/zb201307/am-editor-vue2)
+**`Vue2`** DEMO [https://github.com/zb201307/am-editor-vue2](https://github.com/zb201307/am-editor-vue2)
 
-**`Vue3`** 案例 [https://github.com/red-axe/am-editor-vue](https://github.com/red-axe/am-editor-vue)
+**`Vue3`** DEMO [https://github.com/red-axe/am-editor-vue3-demo](https://github.com/red-axe/am-editor-vue3-demo)
 
-**`React`** 案例 [https://github.com/yanmao-cc/am-editor/tree/master/examples/react](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
+**`React`** DEMO [https://github.com/yanmao-cc/am-editor/tree/master/examples/react](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
 **`Vue2 DEMO`** [https://github.com/yanmao-cc/am-editor-demo-vue2](https://github.com/yanmao-cc/am-editor-demo-vue2)
 
@@ -312,7 +292,7 @@ const engine = new Engine(ref.current, {
 });
 ```
 
-`CodeBlock` 插件默认支持 `markdown`，在编辑器一行开头位置输入代码块语法` ```javascript ` 回车后即可触发。
+`CodeBlock` 插件默认支持 `markdown`，在编辑器一行开头位置输入代码块语法` ```javascript ` 空格后即可触发。
 
 ### 工具栏
 
@@ -372,15 +352,15 @@ return (
 
 服务端是 `NodeJs` 环境，使用 `express` + `WebSocket` 搭建的网络服务。
 
-#### 案例
+#### DEMO
 
-案例中我们已经一份比较基础的客户端代码
+DEMO 中我们已经一份比较基础的客户端代码
 
-[查看 React 完整案例](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
+[查看 React 完整 DEMO](https://github.com/yanmao-cc/am-editor/tree/master/examples/react)
 
-[查看 Vue3 完整案例](https://github.com/red-axe/am-editor-vue)
+[查看 Vue3 完整 DEMO](https://github.com/red-axe/am-editor-vue3-demo)
 
-[查看 Vue2 完整案例](https://github.com/zb201307/am-editor-vue2)
+[查看 Vue2 完整 DEMO](https://github.com/zb201307/am-editor-vue2)
 
 ```tsx
 //实例化协作编辑客户端，传入当前编辑器引擎实例
@@ -419,7 +399,7 @@ yarn start
 
 ## 贡献
 
-感谢 [pleasedmi](https://github.com/pleasedmi)、[Elena211314](https://github.com/Elena211314)、[zb201307](https://github.com/zb201307) 的捐赠
+感谢 [pleasedmi](https://github.com/pleasedmi)、[Elena211314](https://github.com/Elena211314)、[zb201307](https://github.com/zb201307)、[cheon](https://github.com/number317) 的捐赠
 
 如果您愿意，可以在这里留下你的名字。
 

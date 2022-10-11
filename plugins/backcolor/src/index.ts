@@ -1,10 +1,5 @@
-import {
-	$,
-	ConversionData,
-	MarkPlugin,
-	PluginOptions,
-	SchemaMark,
-} from '@aomao/engine';
+import { $, MarkPlugin } from '@aomao/engine';
+import type { PluginOptions, ConversionData, SchemaMark } from '@aomao/engine';
 
 export interface BackcolorOptions extends PluginOptions {
 	hotkey?: { key: string; args: Array<string> };

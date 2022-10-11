@@ -27,9 +27,11 @@ export default class Popup {
 		this.#options = options;
 		this.#editor = editor;
 		this.#root = $(`<div class="data-toolbar-popup-wrapper"></div>`);
-		document.body.appendChild(this.#root[0]);
+		(
+			this.#editor.scrollNode?.get<HTMLElement>() || document.body
+		).appendChild(this.#root[0]);
 		if (isEngine(editor)) {
-			this.#editor.on('select', this.onSelect);
+			this.#editor.on('selectEnd', this.onSelect);
 		} else {
 			document.addEventListener('selectionchange', this.onSelect);
 		}
@@ -52,8 +54,8 @@ export default class Popup {
 			!selection.focusNode ||
 			range.collapsed ||
 			this.#editor.card.getSingleSelectedCard(range) ||
-			(!range.commonAncestorNode.inEditor() &&
-				!range.commonAncestorNode.isRoot())
+			(!range.commonAncestorNode.inEditor(this.#editor.container) &&
+				!range.commonAncestorNode.isRoot(this.#editor.container))
 		) {
 			this.hide();
 			return;
@@ -127,23 +129,26 @@ export default class Popup {
 				this.#align = 'top';
 			}
 			targetRect = this.#align === 'bottom' ? bottomRect : topRect;
-			let top =
+			const scrollElement = this.#editor.scrollNode?.get<HTMLElement>();
+			const scrollNodeRect = scrollElement?.getBoundingClientRect();
+			const top =
 				this.#align === 'top'
-					? targetRect.top - rootRect.height - space
-					: targetRect.bottom + space;
-			if (this.#editor.scrollNode) {
-				const scrollNodeRect = this.#editor.scrollNode
-					.get<HTMLElement>()
-					?.getBoundingClientRect();
-				if (scrollNodeRect) {
-					if (top < scrollNodeRect.top) {
-						top = scrollNodeRect.top;
-					} else if (top > scrollNodeRect.bottom) {
-						top = scrollNodeRect.bottom - rootRect.height - space;
-					}
-				}
-			}
-			let left = targetRect.left + targetRect.width - rootRect.width / 2;
+					? targetRect.top -
+					  rootRect.height -
+					  space -
+					  (scrollNodeRect?.top || 0) +
+					  (scrollElement?.scrollTop || 0)
+					: targetRect.bottom +
+					  space -
+					  (scrollNodeRect?.top || 0) +
+					  (scrollElement?.scrollTop || 0);
+
+			let left =
+				targetRect.left -
+				(scrollNodeRect?.left || 0) +
+				(scrollElement?.scrollLeft || 0) +
+				targetRect.width -
+				rootRect.width / 2;
 			if (left < 0) left = 16;
 			this.#point = {
 				left,
@@ -158,6 +163,10 @@ export default class Popup {
 
 	showContent(callback?: () => void) {
 		const result = this.#editor.trigger('toolbar-render', this.#options);
+		if (!result && (this.#options.items || []).length === 0) {
+			this.hide();
+			return;
+		}
 		ReactDOM.render(
 			typeof result === 'object' ? (
 				result

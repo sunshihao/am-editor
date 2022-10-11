@@ -134,7 +134,6 @@ class Toolbar {
 			onLoad: () => {
 				this.mouseInContainer = true;
 				if (callback) callback();
-				this.engine.trigger('select');
 			},
 			onOk: (text: string, link: string) => this.onOk(text, link),
 		});
@@ -146,6 +145,7 @@ class Toolbar {
 		const vm = createApp(AmPreview, {
 			language,
 			href,
+			readonly: this.engine.readonly,
 			onLoad: () => {
 				if (callback) callback();
 			},
@@ -179,7 +179,10 @@ class Toolbar {
 		const href = target.attributes('href');
 		const container = this.root!.get<HTMLDivElement>()!;
 
-		const name = !href || forceEdit ? 'am-link-editor' : 'am-link-preview';
+		const name =
+			(!href || forceEdit) && !this.engine.readonly
+				? 'am-link-editor'
+				: 'am-link-preview';
 		if (this.vm && this.vm._component.name === name) {
 			if (!this.root || !this.target) return;
 			this.position?.destroy();
@@ -195,7 +198,7 @@ class Toolbar {
 			this.position?.destroy();
 			this.position?.bind(this.root!, this.target!);
 			this.vm =
-				!href || forceEdit
+				(!href || forceEdit) && !this.engine.readonly
 					? this.editor(text, href, () => {
 							this.position?.update();
 					  })
@@ -220,8 +223,8 @@ class Toolbar {
 				const { change, inline } = this.engine;
 				const range = change.range.get();
 				range.select(this.target, true);
-				change.range.select(range);
-				inline.unwrap();
+				inline.unwrap(range);
+				change.apply(range.collapse(true));
 			}
 			if (clearTarget !== false) this.target = undefined;
 		}

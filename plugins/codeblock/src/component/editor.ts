@@ -1,8 +1,9 @@
 import CodeMirror, { EditorConfiguration, Editor } from 'codemirror';
-import { debounce } from 'lodash';
+import debounce from 'lodash/debounce';
 import {
 	$,
 	EditorInterface,
+	escape,
 	isEngine,
 	isHotkey,
 	isMobile,
@@ -27,9 +28,43 @@ const qa = [
 	'vbnet',
 ];
 
+const defaultStyles = {
+	header: 'color: blue;font-weight: bold;',
+	quote: 'color: #090;',
+	negative: 'color: #d44;',
+	positive: 'color: #292;',
+	strong: 'font-weight: bold;',
+	em: 'font-style: italic;',
+	link: 'text-decoration: underline;color: #00c;',
+	strikethrough: 'text-decoration: line-through;',
+	keyword: 'color: #d73a49;',
+	atom: 'color: #905;',
+	number: 'color: #005cc5;',
+	def: 'color: #005cc5;',
+	variable: '',
+	'variable-2': 'color: #005cc5;',
+	'variable-3': 'color: #22863a;',
+	type: 'color: #22863a;',
+	comment: 'color: #6a737d;',
+	string: 'color: #690',
+	'string-2': 'color: #690;',
+	meta: 'color: #1f7f9a;',
+	qualifier: 'color: #555;',
+	builtin: 'color: #6f42c1;',
+	bracket: 'color: #997;',
+	tag: 'color: #22863a;',
+	attribute: 'color: #6f42c1;',
+	hr: 'color: #999;',
+	error: 'color: #f00;',
+	invalidchar: 'color: #f00;',
+	operator: 'color: #d73a49;',
+	property: 'color: #005cc5;',
+};
+
 class CodeBlockEditor implements CodeBlockEditorInterface {
 	private editor: EditorInterface;
 	private options: Options;
+	private styleMap: Record<string, string>;
 	codeMirror?: Editor;
 	mode: string = 'plain';
 	container: NodeInterface;
@@ -37,6 +72,7 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 	constructor(editor: EditorInterface, options: Options) {
 		this.editor = editor;
 		this.options = options;
+		this.styleMap = { ...defaultStyles, ...options.styleMap };
 		this.container = options.container || $(this.renderTemplate());
 	}
 
@@ -45,8 +81,9 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 	}
 
 	getConfig(value: string, mode?: string): EditorConfiguration {
-		let tabSize = this.codeMirror
-			? this.codeMirror.getOption('indentUnit')
+		const mirror = this.codeMirror;
+		let tabSize = mirror
+			? mirror.getOption('indentUnit')
 			: qa.indexOf(mode || '') > -1
 			? 4
 			: 2;
@@ -56,24 +93,26 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 				return Math.min(val1, val2.length);
 			}, 1 / 0);
 		}
+		const editor = this.editor;
 		return {
 			tabSize,
 			indentUnit: tabSize,
 			scrollbarStyle: 'simple',
-			readOnly: !isEngine(this.editor) || this.editor.readonly,
+			readOnly: !isEngine(editor) || editor.readonly,
 			viewportMargin: Infinity,
 		};
 	}
 
 	getSyntax(mode: string) {
-		return this.options.synatxMap[mode];
+		return this.options.synatxMap[mode] || mode;
 	}
 
 	create(mode: string, value: string, options?: EditorConfiguration) {
 		this.mode = mode;
 		const syntaxMode = this.getSyntax(mode);
-		this.codeMirror = CodeMirror(
-			this.container.find('.data-codeblock-content').get<HTMLElement>()!,
+		const container = this.container;
+		const mirror = CodeMirror(
+			container.find('.data-codeblock-content').get<HTMLElement>()!,
 			{
 				value,
 				mode: syntaxMode,
@@ -85,17 +124,11 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 				...options,
 			},
 		);
-		this.codeMirror.on('mousedown', (_, event) => {
-			if (!isEngine(this.editor) || this.editor.readonly) {
-				event.preventDefault();
-				event.stopPropagation();
-			}
-		});
-		this.codeMirror.on('focus', () => {
+		mirror.on('focus', () => {
 			const { onFocus } = this.options;
 			if (onFocus) onFocus();
 		});
-		this.codeMirror.on('keydown', (editor, event) => {
+		mirror.on('keydown', (editor, event) => {
 			// 撤销和重做使用codemirror自带的操作
 			if (
 				isHotkey('mod+z', event) ||
@@ -145,24 +178,24 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 				}
 			}
 		});
-		this.codeMirror.on('blur', () => {
+		mirror.on('blur', () => {
 			const { onBlur } = this.options;
-			this.codeMirror?.setCursor(this.codeMirror.lineCount() - 1, 0);
 			if (onBlur) onBlur();
 		});
 		if (isMobile) {
-			this.codeMirror.on('touchstart', (_, event) => {
+			mirror.on('touchstart', (_, event) => {
 				const { onMouseDown } = this.options;
 				if (onMouseDown) onMouseDown(event);
 			});
 		} else {
-			this.codeMirror.on('mousedown', (_, event) => {
+			mirror.on('mousedown', (_, event) => {
 				const { onMouseDown } = this.options;
+				if (event.button === 2) event.stopPropagation();
 				if (onMouseDown) onMouseDown(event);
 			});
 		}
 
-		this.codeMirror.on(
+		mirror.on(
 			'change',
 			debounce(() => {
 				if (!isEngine(this.editor)) return;
@@ -170,7 +203,7 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 			}, 50),
 		);
 
-		this.codeMirror.setOption('extraKeys', {
+		mirror.setOption('extraKeys', {
 			Enter: (mirror) => {
 				const config = this.getConfig(mirror.getValue());
 				Object.keys(config).forEach((key) => {
@@ -183,13 +216,14 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 			},
 		});
 
-		this.container.on('mousedown', (event: MouseEvent) => {
-			if (!this.codeMirror?.hasFocus()) {
+		container.on('mousedown', (event: MouseEvent) => {
+			if (!mirror?.hasFocus()) {
 				setTimeout(() => {
-					this.codeMirror?.focus();
+					mirror?.focus();
 				}, 0);
 			}
 		});
+		this.codeMirror = mirror;
 		return this.codeMirror;
 	}
 
@@ -198,14 +232,16 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 	}
 
 	update(mode: string, code?: string) {
+		const mirror = this.codeMirror;
 		this.mode = mode;
 		if (code !== undefined) {
-			this.codeMirror?.setValue(code);
+			mirror?.setValue(code);
 		}
-		this.codeMirror?.setOption('mode', this.getSyntax(mode));
-		this.codeMirror?.setOption(
+		const editor = this.editor;
+		mirror?.setOption('mode', this.getSyntax(mode));
+		mirror?.setOption(
 			'readOnly',
-			!isEngine(this.editor) || this.editor.readonly ? true : false,
+			!isEngine(editor) || editor.readonly ? true : false,
 		);
 		this.save();
 	}
@@ -214,7 +250,7 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 		const root = this.container.find('.data-codeblock-content');
 		mode = this.getSyntax(mode);
 		const stage = $(
-			'<div class="CodeMirror"><pre class="cm-s-default" /></div>',
+			'<div style="font-family: monospace;font-size: 13px; line-height: 21px; color: #595959; direction: ltr; height: auto; overflow: hidden;background: transparent;"><pre style="color: rgb(89, 89, 89); margin: 0px; padding: 0px; background: none 0% 0% / auto repeat scroll padding-box border-box rgba(0, 0, 0, 0);" /></div>',
 		);
 		root.append(stage);
 		const pre = stage.find('pre')[0];
@@ -225,31 +261,77 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 	}
 
 	save() {
-		if (!isEngine(this.editor) || !this.codeMirror) return;
+		const editor = this.editor;
+		const mirror = this.codeMirror;
+		if (!isEngine(editor) || !mirror) return;
 		// 中文输入过程需要判断
-		if (this.editor.change.isComposing()) {
+		if (editor.change.isComposing()) {
 			return;
 		}
-		const value = this.codeMirror.getValue();
+		const value = mirror.getValue();
 		const { onSave } = this.options;
 		if (onSave) onSave(this.mode, value);
 	}
 
 	focus() {
-		if (!this.codeMirror) return;
-		this.codeMirror.focus();
+		const mirror = this.codeMirror;
+		if (!mirror) return;
+		mirror.focus();
 	}
 
 	select(start: boolean = true) {
-		if (!this.codeMirror) return;
-		this.codeMirror.focus();
+		const mirror = this.codeMirror;
+		if (!mirror) return;
+		mirror.focus();
 		if (!start) {
-			const line = this.codeMirror.lineCount() - 1;
-			const content = this.codeMirror.getLine(line);
-			this.codeMirror.setSelection({ line, ch: content.length });
+			const line = mirror.lineCount() - 1;
+			const content = mirror.getLine(line);
+			mirror.setSelection({ line, ch: content.length });
 		} else {
-			this.codeMirror.setSelection({ line: 0, ch: 0 });
+			mirror.setSelection({ line: 0, ch: 0 });
 		}
+	}
+
+	toHtml(col: number, text: string, style: string = '', tabSize: number = 0) {
+		tabSize = tabSize || CodeMirror.defaults.tabSize;
+		let html = '';
+		let content = '';
+		// replace tabs
+
+		for (let pos = 0; ; ) {
+			const idx = text.indexOf('\t', pos);
+
+			if (idx === -1) {
+				content += text.slice(pos);
+				col += text.length - pos;
+				break;
+			} else {
+				col += idx - pos;
+				content += text.slice(pos, idx);
+				const size = tabSize - (col % tabSize);
+				col += size;
+
+				for (let i = 0; i < size; ++i) {
+					content += ' ';
+				}
+
+				pos = idx + 1;
+			}
+		}
+
+		if (style) {
+			let styleStr = '';
+			style.split(' ').forEach((cls) => {
+				styleStr += this.styleMap[cls] ?? '';
+			});
+			const spanElement = `<span ${
+				styleStr ? `style="${styleStr}"` : ''
+			}>${escape(content)}</span>`;
+			html += spanElement;
+		} else {
+			html += content;
+		}
+		return html;
 	}
 
 	/**
@@ -265,76 +347,41 @@ class CodeBlockEditor implements CodeBlockEditorInterface {
 	 */
 	runMode(string: string, modespec: string, callback: any, options: any) {
 		const mode = CodeMirror.getMode(CodeMirror.defaults, modespec);
-		const ie = /MSIE \d/.test(navigator.userAgent);
-		const ie_lt9 =
-			ie &&
-			(document['documentMode'] == null || document['documentMode'] < 9);
 
-		if (callback.appendChild) {
-			const tabSize =
-				(options && options.tabSize) || CodeMirror.defaults.tabSize;
-			const node = callback;
-			let col = 0;
-			node.innerHTML = '';
-
-			callback = (text: string, style: string) => {
-				if (text === '\n') {
-					// Emitting LF or CRLF on IE8 or earlier results in an incorrect display.
-					// Emitting a carriage return makes everything ok.
-					const lineCode = document.createElement('br');
-					node.appendChild(lineCode);
-					col = 0;
-					return;
-				}
-
-				let content = '';
-				// replace tabs
-
-				for (let pos = 0; ; ) {
-					const idx = text.indexOf('\t', pos);
-
-					if (idx === -1) {
-						content += text.slice(pos);
-						col += text.length - pos;
-						break;
-					} else {
-						col += idx - pos;
-						content += text.slice(pos, idx);
-						const size = tabSize - (col % tabSize);
-						col += size;
-
-						for (let i = 0; i < size; ++i) {
-							content += ' ';
-						}
-
-						pos = idx + 1;
-					}
-				}
-
-				if (style) {
-					const sp = node.appendChild(document.createElement('span'));
-					sp.className = 'cm-' + style.replace(/ +/g, ' cm-');
-					sp.appendChild(document.createTextNode(content));
-				} else {
-					node.appendChild(document.createTextNode(content));
-				}
-			};
-		}
+		const tabSize =
+			(options && options.tabSize) || CodeMirror.defaults.tabSize;
+		const node = callback;
+		let col = 0;
+		node.innerHTML = '';
+		let html = '';
 
 		const lines = CodeMirror.splitLines(string);
 		const state = (options && options.state) || CodeMirror.startState(mode);
 
 		for (let i = 0, e = lines.length; i < e; ++i) {
-			if (i) callback('\n');
+			if (i) {
+				html += '<br />';
+				col = 0;
+			}
 			const stream = new CodeMirror.StringStream(lines[i]);
 			if (!stream.string && mode.blankLine) mode.blankLine(state);
 
 			while (!stream.eol()) {
 				const style = mode.token ? mode.token(stream, state) : '';
-				callback(stream.current(), style, i, stream.start, state);
+				html += this.toHtml(
+					col,
+					stream.current(),
+					style || '',
+					tabSize,
+				);
 				stream.start = stream.pos;
 			}
 		}
+		node.innerHTML = html;
+	}
+
+	destroy() {
+		this.container.remove();
 	}
 }
 

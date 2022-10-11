@@ -7,6 +7,7 @@ import {
 	CardType,
 	isServer,
 	CardValue,
+	DATA_CONTENTEDITABLE_KEY,
 } from '@aomao/engine';
 import { CollapseGroupProps } from '../../collapse/group';
 import { CollapseItemProps } from '../../collapse/item';
@@ -47,11 +48,12 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 	}
 
 	init() {
-		if (!isEngine(this.editor) || isServer) {
+		const editor = this.editor;
+		if (!isEngine(editor) || isServer) {
 			return;
 		}
 
-		this.component = new CollapseComponent(this.editor, {
+		this.component = new CollapseComponent(editor, {
 			onCancel: () => {
 				this.changeToText();
 			},
@@ -66,13 +68,14 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 	}
 
 	getData(): Data {
-		if (!isEngine(this.editor)) {
+		const editor = this.editor;
+		if (!isEngine(editor)) {
 			return [];
 		}
 		const data:
 			| Data
 			| { title: any; items: Omit<CollapseItemProps, 'engine'>[] }[] = [];
-		const defaultConfig = getToolbarDefaultConfig(this.editor);
+		const defaultConfig = getToolbarDefaultConfig(editor);
 		const collapseConfig = defaultConfig.find(
 			({ type }) => type === 'collapse',
 		);
@@ -100,7 +103,7 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 							...(typeof item !== 'string' ? item : {}),
 							disabled: collapseItem.onDisabled
 								? collapseItem.onDisabled()
-								: !this.editor.command.queryEnabled(name),
+								: !editor.command.queryEnabled(name),
 						});
 					} else if (typeof item === 'object') items.push(item);
 				});
@@ -148,19 +151,21 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 	}
 
 	remove() {
-		if (!isEngine(this.editor)) return;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		this.component?.remove();
-		this.editor.card.remove(this.id);
+		editor.card.remove(this.id);
 	}
 
 	changeToText() {
-		if (!this.root.inEditor() || !isEngine(this.editor)) {
+		const editor = this.editor;
+		if (!this.root.inEditor() || !isEngine(editor)) {
 			return;
 		}
 
 		const content = this.keyword?.get<HTMLElement>()?.innerText || '';
 		this.remove();
-		this.editor.node.insertText(content);
+		editor.node.insertText(content);
 	}
 
 	destroy() {
@@ -177,8 +182,9 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 	}
 
 	handleInput() {
-		if (!isEngine(this.editor)) return;
-		const { change, card } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, card } = editor;
 		if (change.isComposing()) {
 			return;
 		}
@@ -197,14 +203,14 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 		// 搜索关键词为空
 		if (keyword === '') {
 			this.component?.render(
-				this.editor.root,
+				editor.root,
 				this.root,
 				this.#collapseData || [],
 			);
 			return;
 		}
 		const data = this.search(keyword);
-		this.component?.render(this.editor.root, this.root, data);
+		this.component?.render(editor.root, this.root, data);
 	}
 
 	resetPlaceHolder() {
@@ -219,10 +225,10 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 		if (!isEngine(editor) || isServer) return;
 		const language = editor.language.get('toolbar', 'component');
 		this.root.attributes('data-transient', 'true');
-		this.root.attributes('contenteditable', 'false');
+		this.root.attributes(DATA_CONTENTEDITABLE_KEY, 'false');
 		// 编辑模式
 		const container = $(
-			`<span class="data-toolbar-component-keyword" contenteditable="true">/</span><span class="data-toolbar-component-placeholder">${language['placeholder']}</span>`,
+			`<span class="data-toolbar-component-keyword" ${DATA_CONTENTEDITABLE_KEY}="true">/</span><span class="data-toolbar-component-placeholder">${language['placeholder']}</span>`,
 		);
 		const center = this.getCenter();
 		center.empty().append(container);
@@ -257,7 +263,7 @@ class ToolbarComponent<T extends ToolbarValue = ToolbarValue> extends Card<T> {
 		});
 		if (!this.#collapseData) this.#collapseData = this.getData();
 		// 显示下拉列表
-		this.component?.render(this.editor.root, this.root, this.#collapseData);
+		this.component?.render(editor.root, this.root, this.#collapseData);
 	}
 }
 

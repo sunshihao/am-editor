@@ -11,7 +11,7 @@ import {
 	decodeCardValue,
 	encodeCardValue,
 } from '@aomao/engine';
-
+import type { RequestData, RequestHeaders } from '@aomao/engine';
 import VideoComponent, { VideoValue, VideoStatus } from './component';
 
 export interface VideoUploaderOptions extends PluginOptions {
@@ -30,7 +30,7 @@ export interface VideoUploaderOptions extends PluginOptions {
 	/**
 	 * 额外携带数据上传
 	 */
-	data?: {};
+	data?: RequestData;
 	/**
 	 * 请求类型，默认 multipart/form-data;
 	 */
@@ -46,11 +46,11 @@ export interface VideoUploaderOptions extends PluginOptions {
 	/**
 	 * 请求头
 	 */
-	headers?: { [key: string]: string } | (() => { [key: string]: string });
+	headers?: RequestHeaders;
 	/**
 	 * 文件接收的格式，默认 "*"
 	 */
-	accept?: string | Array<string>;
+	accept?: string | string[] | Record<string, string>;
 	/**
 	 * 文件选择限制数量
 	 */
@@ -91,7 +91,11 @@ export interface VideoUploaderOptions extends PluginOptions {
 		/**
 		 * 额外携带数据上传
 		 */
-		data?: {};
+		data?: RequestData;
+		/**
+		 * 请求头
+		 */
+		headers?: RequestHeaders;
 		/**
 		 * 请求类型，默认 multipart/form-data;
 		 */
@@ -99,40 +103,49 @@ export interface VideoUploaderOptions extends PluginOptions {
 	};
 }
 
+const DROP_FILES = 'drop:files';
+const PASTE_EVENT = 'paste:event';
+const PASTE_EACH = 'paste:each';
 export default class<
 	T extends VideoUploaderOptions = VideoUploaderOptions,
 > extends Plugin<T> {
-	private cardComponents: { [key: string]: VideoComponent<VideoValue> } = {};
+	protected cardComponents: { [key: string]: VideoComponent<VideoValue> } =
+		{};
 
 	static get pluginName() {
 		return 'video-uploader';
 	}
 
-	extensionNames = ['mp4'];
+	extensionNames: string[] | Record<string, string> = { mp4: 'video/mp4' };
 
 	init() {
-		if (isEngine(this.editor)) {
-			this.editor.on('drop:files', (files) => this.dropFiles(files));
-			this.editor.on('paste:event', ({ files }) =>
-				this.pasteFiles(files),
-			);
-			this.editor.on('paste:each', (node) => this.pasteEach(node));
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.on(DROP_FILES, this.dropFiles);
+			editor.on(PASTE_EVENT, this.pasteFiles);
+			editor.on(PASTE_EACH, this.pasteEach);
 		}
-		let { accept } = this.options;
-		const names: Array<string> = [];
+		let { accept } = this.options.file || {};
 		if (typeof accept === 'string') accept = accept.split(',');
-
-		(accept || []).forEach((name) => {
-			name = name.trim();
-			const newName = name.split('.').pop();
-			if (newName) names.push(newName);
-		});
-		if (names.length > 0) this.extensionNames = names;
+		if (Array.isArray(accept)) {
+			const names: string[] = [];
+			(accept || []).forEach((name) => {
+				name = name.trim();
+				const newName = name.split('.').pop();
+				if (newName) names.push(newName);
+			});
+			if (names.length > 0) this.extensionNames = names;
+		} else if (typeof accept === 'object') {
+			this.extensionNames = accept;
+		}
 	}
 
 	isVideo(file: File) {
 		const name = getExtensionName(file);
-		return this.extensionNames.indexOf(name) >= 0;
+		const names = Array.isArray(this.extensionNames)
+			? this.extensionNames
+			: Object.keys(this.extensionNames);
+		return names.indexOf('*') >= 0 || names.indexOf(name) >= 0;
 	}
 
 	async execute(files?: Array<File> | MouseEvent | string, ...args: any) {
@@ -143,7 +156,8 @@ export default class<
 			}
 			return;
 		}
-		const { request, card, language } = this.editor;
+		const editor = this.editor;
+		const { request, card, language } = editor;
 		const {
 			action,
 			data,
@@ -158,12 +172,15 @@ export default class<
 		const { parse } = this.options;
 		const limitSize = this.options.limitSize || 5 * 1024 * 1024;
 		if (!Array.isArray(files)) {
+			const accepts = Array.isArray(this.extensionNames)
+				? '.' + this.extensionNames.join(',.')
+				: Object.values(this.extensionNames).join(',');
 			files = await request.getFiles({
 				event: files,
 				accept: isAndroid
 					? 'video/*'
-					: this.extensionNames.length > 0
-					? '.' + this.extensionNames.join(',.')
+					: accepts.length > 0
+					? accepts
 					: '',
 				multiple,
 			});
@@ -177,10 +194,11 @@ export default class<
 				contentType,
 				crossOrigin,
 				withCredentials,
-				headers: typeof headers === 'function' ? headers() : headers,
+				headers,
 				onBefore: (file) => {
 					if (file.size > limitSize) {
-						this.editor.messageError(
+						editor.messageError(
+							'upload-limit',
 							language
 								.get('video', 'uploadLimitError')
 								.toString()
@@ -195,7 +213,7 @@ export default class<
 				},
 				onReady: (fileInfo) => {
 					if (
-						!isEngine(this.editor) ||
+						!isEngine(editor) ||
 						!!this.cardComponents[fileInfo.uid]
 					)
 						return;
@@ -325,7 +343,7 @@ export default class<
 							message:
 								typeof result.data === 'string'
 									? result.data
-									: this.editor.language.get<string>(
+									: language.get<string>(
 											'video',
 											'uploadError',
 									  ),
@@ -333,7 +351,7 @@ export default class<
 					}
 					//成功
 					else {
-						this.editor.card.update<VideoValue>(
+						editor.card.update<VideoValue>(
 							component.id,
 							typeof result.data === 'string'
 								? { url: result.data }
@@ -353,10 +371,7 @@ export default class<
 						status: 'error',
 						message:
 							error.message ||
-							this.editor.language.get<string>(
-								'video',
-								'uploadError',
-							),
+							language.get<string>('video', 'uploadError'),
 					});
 					delete this.cardComponents[file.uid || ''];
 				},
@@ -378,20 +393,27 @@ export default class<
 		}) => void,
 		failed: (message: string) => void = () => {},
 	) {
-		const { request } = this.editor;
+		const { request, language } = this.editor;
 
 		const { query, parse } = this.options;
 		if (!query || !video_id) return success();
 
-		const { action, type, contentType, data } = query;
+		const { action, type, contentType, data, headers } = query;
 		request.ajax({
 			url: action,
 			contentType: contentType || '',
 			type: type === undefined ? 'json' : type,
-			data: {
-				...data,
-				id: video_id,
-			},
+			headers,
+			data:
+				typeof data === 'function'
+					? async () => {
+							const newData = await data();
+							return { ...newData, id: video_id };
+					  }
+					: {
+							...data,
+							id: video_id,
+					  },
 			success: (response: any) => {
 				const { result, data } = response;
 				if (!result) {
@@ -400,8 +422,7 @@ export default class<
 					const result = parse ? parse(response) : response;
 					if (result.result === false) {
 						failed(
-							result.data ||
-								this.editor.language.get('video', 'loadError'),
+							result.data || language.get('video', 'loadError'),
 						);
 					} else
 						success({
@@ -414,36 +435,35 @@ export default class<
 				}
 			},
 			error: (error) => {
-				failed(
-					error.message ||
-						this.editor.language.get('video', 'loadError'),
-				);
+				failed(error.message || language.get('video', 'loadError'));
 			},
 			method: 'GET',
 		});
 	}
 
-	dropFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	dropFiles = (files: File[]) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isVideo(file));
 		if (files.length === 0) return;
-		this.editor.command.execute('video-uploader', files);
+		editor.command.execute('video-uploader', files);
 		return false;
-	}
+	};
 
-	pasteFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	pasteFiles = ({ files }: Record<'files', File[]>) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isVideo(file));
 		if (files.length === 0) return;
-		this.editor.command.execute(
+		editor.command.execute(
 			'video-uploader',
 			files.filter((file) => this.isVideo(file)),
 			files,
 		);
 		return false;
-	}
+	};
 
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
 		//是卡片，并且还没渲染
 		if (node.isCard() && node.attributes(READY_CARD_KEY)) {
 			if (node.attributes(READY_CARD_KEY) !== 'video') return;
@@ -462,5 +482,12 @@ export default class<
 			}
 			return;
 		}
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(DROP_FILES, this.dropFiles);
+		editor.off(PASTE_EVENT, this.pasteFiles);
+		editor.off(PASTE_EACH, this.pasteEach);
 	}
 }

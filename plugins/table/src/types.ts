@@ -1,9 +1,12 @@
+import { EditorInterface } from '@aomao/engine';
 import {
 	CardInterface,
+	CardToolbarItemOptions,
 	CardValue,
 	ClipboardData,
 	NodeInterface,
 	PluginOptions,
+	ToolbarItemOptions,
 } from '@aomao/engine';
 import { EventEmitter2 } from 'eventemitter2';
 
@@ -75,6 +78,10 @@ export interface HelperInterface {
 	 * @returns
 	 */
 	getCopyData(): { html: string; text: string } | undefined;
+	/**
+	 * 清除复制的数据
+	 */
+	clearCopyData(): void;
 
 	trimBlankSpan(node: NodeInterface): NodeInterface;
 
@@ -178,7 +185,6 @@ export interface TableInterface<V extends TableValue = TableValue>
 	command: TableCommandInterface;
 	colMinWidth: number;
 	rowMinHeight: number;
-	isChanged: boolean;
 	/**
 	 * 渲染
 	 */
@@ -193,12 +199,20 @@ export interface TableOptions extends PluginOptions {
 	};
 	colMinWidth?: number;
 	rowMinHeight?: number;
+	/**最大插入行、列 */
+	maxInsertNum?: number;
 	markdown?: boolean;
+	cardToolbars?: (
+		items: (ToolbarItemOptions | CardToolbarItemOptions)[],
+		editor: EditorInterface,
+	) => (ToolbarItemOptions | CardToolbarItemOptions)[];
 }
 
 export type ControllOptions = {
 	col_min_width: number;
 	row_min_height: number;
+	/**最大插入行、列 数 */
+	max_insert_num: number;
 };
 
 export type ControllDragging = {
@@ -247,11 +261,11 @@ export interface ControllBarInterface extends EventEmitter2 {
 
 	init(): void;
 
-	refresh(): void;
+	refresh(refershSize?: boolean): void;
 
-	renderRowBars(start?: number, end?: number): void;
+	renderRowBars(refershSize?: boolean): void;
 
-	renderColBars(): void;
+	renderColBars(refershSize?: boolean): void;
 
 	removeRow(index: number): void;
 
@@ -317,6 +331,11 @@ export interface TableCommandInterface extends EventEmitter2 {
 	copy(all?: boolean): void;
 
 	mockCopy(): void;
+
+	/**
+	 * 清除复制的数据
+	 */
+	clearCopyData(): void;
 
 	shortcutCopy(event: ClipboardEvent): void;
 

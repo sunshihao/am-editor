@@ -1,7 +1,6 @@
 import { EventListener, NodeInterface } from './node';
 import { CardInterface } from './card';
 import { RangeInterface, RangePath } from './range';
-import { Path } from 'sharedb';
 import { ClipboardData } from './clipboard';
 
 /**
@@ -30,7 +29,11 @@ export interface ChangeEventInterface {
 	 * 选择事件
 	 * @param callback
 	 */
-	onSelect(callback: (event: Event) => void): void;
+	onSelect(
+		callback: (event: Event) => void,
+		onStart?: EventListener,
+		onEnd?: EventListener,
+	): void;
 	/**
 	 * 粘贴事件
 	 * @param callback
@@ -108,6 +111,8 @@ export type ChangeOptions = {
 	 * 光标选择事件
 	 */
 	onSelect?: () => void;
+	onSelectStart?: () => void;
+	onSelectEnd?: () => void;
 	/**
 	 * 值实时变化事件
 	 */
@@ -149,6 +154,11 @@ export interface ChangeRangeInterface {
 	 * 取消焦点
 	 */
 	blur(): void;
+	/**
+	 * 设置最后一次失焦的range位置
+	 * @param range
+	 */
+	setLastBlurRange(range?: RangeInterface): void;
 }
 /**
  * Change 接口
@@ -189,7 +199,9 @@ export interface ChangeInterface {
 	/**
 	 * 编辑器中光标改变触发
 	 */
-	onSelect: () => void;
+	onSelect: (range?: RangeInterface) => void;
+	onSelectStart: () => void;
+	onSelectEnd: () => void;
 	/**
 	 * 设置编辑器值后触发
 	 */
@@ -221,7 +233,11 @@ export interface ChangeInterface {
 	 * 初始化一个编辑器空值
 	 * @param range
 	 */
-	initValue(range?: RangeInterface): void;
+	initValue(
+		range?: RangeInterface,
+		apply?: boolean,
+		container?: NodeInterface,
+	): void;
 	/**
 	 * 给编辑器设置一个值
 	 * @param value 值
@@ -246,12 +262,13 @@ export interface ChangeInterface {
 	 */
 	setMarkdown(text: string, callback?: (count: number) => void): void;
 	/**
-	 * 获取编辑器值
+	 * 获取指定容器的值
+	 * @param container 指定容器的，默认为编辑器根节点
 	 */
 	getOriginValue(container?: NodeInterface): string;
 	/**
 	 * 获取编辑值
-	 * @param options
+	 * @param ignoreCursor 是否忽悠光标所在的记录节点
 	 */
 	getValue(options: { ignoreCursor?: boolean }): string;
 	/**

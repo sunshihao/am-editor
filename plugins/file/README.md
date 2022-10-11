@@ -24,7 +24,7 @@ new Engine(...,{ plugins:[ File , FileUploader ] , cards:[ FileComponent ]})
 `onBeforeRender` 预览附近或者下载附件时可对地址修改
 
 ```ts
-onBeforeRender?: (action: 'download' | 'preview', url: string) => string;
+onBeforeRender?: (action: 'download' | 'preview', url: string, editor: EditorInterface) => string;
 ```
 
 ## `FileUploader` 可选项
@@ -78,7 +78,7 @@ withCredentials?: boolean;
 /**
 * 请求头
 */
-headers?: { [key: string]: string } | (() => { [key: string]: string });
+headers?: RequestHeaders;
 /**
  * 数据返回类型，默认 json
  */
@@ -90,7 +90,7 @@ name?: string
 /**
  * 额外携带数据上传
  */
-data?: {};
+data?: RequestData;
 /**
  * 请求类型，默认 multipart/form-data;
  */

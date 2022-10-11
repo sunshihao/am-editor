@@ -24,8 +24,12 @@ export interface BlockModelInterface {
 	/**
 	 * 获取最近的block节点，找不到返回 node
 	 * @param node 节点
+	 * @param callback 回调函数
 	 */
-	closest(node: NodeInterface): NodeInterface;
+	closest(
+		node: NodeInterface,
+		callback?: (node: NodeInterface) => boolean,
+	): NodeInterface;
 	/**
 	 * 在光标位置包裹一个block节点
 	 * @param block 节点
@@ -58,6 +62,7 @@ export interface BlockModelInterface {
 	 * @param block 节点
 	 * @param range 光标
 	 * @param splitNode 分割节点，默认为光标开始位置的block节点
+	 * @param removeCurrentEmptyBlock 是否移除当前空的block节点
 	 */
 	insert(
 		block: NodeInterface | Node | string,
@@ -137,12 +142,7 @@ export interface BlockModelInterface {
 	 * @param node 节点
 	 * @param root 根节点
 	 */
-	flat(node: NodeInterface, root: NodeInterface): void;
-	/**
-	 * br 换行改成段落
-	 * @param block 节点
-	 */
-	brToBlock(block: NodeInterface): void;
+	flat(block: NodeInterface, root: NodeInterface): void;
 
 	/**
 	 * 插入一个空的block节点
@@ -184,15 +184,4 @@ export interface BlockInterface<T extends PluginOptions = PluginOptions>
 	 * 获取当前插件定义规则
 	 */
 	schema(): SchemaBlock | Array<SchemaBlock>;
-
-	/**
-	 * Markdown 处理
-	 * @returns 返回false表示已拦截处理
-	 */
-	markdown?(
-		event: KeyboardEvent,
-		text: string,
-		block: NodeInterface,
-		node: NodeInterface,
-	): boolean | void;
 }

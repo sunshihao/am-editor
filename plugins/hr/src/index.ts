@@ -4,42 +4,37 @@ import {
 	NodeInterface,
 	CARD_KEY,
 	isEngine,
-	PluginEntry,
 	SchemaInterface,
-	PluginOptions,
 	CARD_VALUE_KEY,
 	decodeCardValue,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import HrComponent, { HrValue } from './component';
+import { HrOptions } from './types';
 
-export interface HrOptions extends PluginOptions {
-	hotkey?: string | Array<string>;
-	markdown?: boolean;
-}
+const PARSE_HTML = 'parse:html';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
+const MARKDOWN_IT = 'markdown-it';
 export default class<T extends HrOptions = HrOptions> extends Plugin<T> {
 	static get pluginName() {
 		return 'hr';
 	}
 
 	init() {
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:schema', (schema) => this.pasteSchema(schema));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
-		if (isEngine(this.editor)) {
-			this.editor.on('keydown:enter', (event) => this.markdown(event));
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
-			this.editor.on('paste:markdown', (child) =>
-				this.pasteMarkdown(child),
-			);
+		const editor = this.editor;
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
+		editor.on(PASTE_EACH, this.pasteHtml);
+		if (isEngine(editor)) {
+			editor.on(MARKDOWN_IT, this.markdownIt);
 		}
 	}
 
 	execute() {
-		if (!isEngine(this.editor)) return;
-		const { card } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { card } = editor;
 		card.insert(HrComponent.cardName);
 	}
 
@@ -47,72 +42,13 @@ export default class<T extends HrOptions = HrOptions> extends Plugin<T> {
 		return this.options.hotkey || 'mod+shift+e';
 	}
 
-	markdown(event: KeyboardEvent) {
-		if (!isEngine(this.editor) || this.options.markdown === false) return;
-		const { change, command, node } = this.editor;
-		const range = change.range.get();
-
-		if (!range.collapsed || change.isComposing() || !this.markdown) return;
-		const blockApi = this.editor.block;
-		const block = blockApi.closest(range.startNode);
-
-		if (!node.isRootBlock(block)) {
-			return;
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('hr');
 		}
+	};
 
-		const chars = blockApi.getLeftText(block);
-		const match = /^[-]{3,}$/.exec(chars);
-
-		if (match) {
-			event.preventDefault();
-			blockApi.removeLeftText(block);
-			command.execute((this.constructor as PluginEntry).pluginName);
-			return false;
-		}
-		return;
-	}
-
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		const reg = /(^|\r\n|\n)((-\s*){3,})\s?(\r\n|\n|$)/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		let { reg, match } = result;
-		if (!match) return;
-
-		let newText = '';
-		let textNode = node.clone(true).get<Text>()!;
-		const { card } = this.editor;
-		while (
-			textNode.textContent &&
-			(match = reg.exec(textNode.textContent))
-		) {
-			//从匹配到的位置切断
-			let regNode = textNode.splitText(match.index);
-			newText += textNode.textContent;
-			//从匹配结束位置分割
-			textNode = regNode.splitText(match[0].length);
-
-			const cardNode = card.replaceNode($(regNode), 'hr');
-			regNode.remove();
-			//  match[1] 把之前的换行符补上
-			newText += match[1] + cardNode.get<Element>()?.outerHTML + '\n';
-		}
-		newText += textNode.textContent;
-		node.text(newText);
-	}
-
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add([
 			{
 				type: 'block',
@@ -120,22 +56,24 @@ export default class<T extends HrOptions = HrOptions> extends Plugin<T> {
 				isVoid: true,
 			},
 		]);
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.name === 'hr') {
-			this.editor.card.replaceNode(node, HrComponent.cardName);
+			editor.card.replaceNode(node, HrComponent.cardName);
 			return false;
 		}
 		return true;
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: HrValue) => NodeInterface,
-	) {
-		root.find(`[${CARD_KEY}=${HrComponent.cardName}`).each((hrNode) => {
+	) => {
+		const results: NodeInterface[] = [];
+		root.find(`[${CARD_KEY}=${HrComponent.cardName}]`).each((hrNode) => {
 			const node = $(hrNode);
 			let hr = node.find('hr');
 			hr.css({
@@ -153,7 +91,19 @@ export default class<T extends HrOptions = HrOptions> extends Plugin<T> {
 				hr = callback(hr, value);
 			}
 			node.replaceWith(hr);
+			results.push(hr);
 		});
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		if (isEngine(editor)) {
+			editor.off(MARKDOWN_IT, this.markdownIt);
+		}
 	}
 }
 export { HrComponent };

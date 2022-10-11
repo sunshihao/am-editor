@@ -69,10 +69,10 @@ export interface ImageValue extends CardValue {
 }
 
 class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
-	private image?: Image;
-	private widthInput?: NodeInterface;
-	private heightInput?: NodeInterface;
-	private isLocalError?: boolean;
+	protected image?: Image;
+	protected widthInput?: NodeInterface;
+	protected heightInput?: NodeInterface;
+	protected isLocalError?: boolean;
 
 	static get cardName() {
 		return 'image';
@@ -82,6 +82,9 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 		return CardType.INLINE;
 	}
 
+	static get collab() {
+		return false;
+	}
 	// static get autoSelected() {
 	// 	return false;
 	// }
@@ -98,7 +101,17 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 	}
 
 	setSize(size: Size, loaded?: boolean) {
-		if (!loaded) this.setValue({ size } as T);
+		if (!size.width || !size.height) return;
+		const value = this.getValue();
+		if (
+			!loaded ||
+			!value.size ||
+			!value.size.height ||
+			!value.size.width ||
+			!value.size.naturalWidth ||
+			!value.size.naturalHeight
+		)
+			this.setValue({ size } as T);
 		if (this.widthInput) {
 			this.widthInput.get<HTMLInputElement>()!.value =
 				size.width.toString();
@@ -131,108 +144,133 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 	}
 
 	toolbar(): Array<CardToolbarItemOptions | ToolbarItemOptions> {
-		if (!isEngine(this.editor) || this.editor.readonly) return [];
-		const { language } = this.editor;
-		let value = this.getValue();
-		if (this.isLocalError === true || value?.status !== 'done')
-			return [
+		const editor = this.editor;
+		const getItems = (): Array<
+			CardToolbarItemOptions | ToolbarItemOptions
+		> => {
+			if (!isEngine(editor) || editor.readonly) return [];
+			const { language } = editor;
+			let value = this.getValue();
+			if (this.isLocalError === true || value?.status !== 'done')
+				return [
+					{
+						key: 'delete',
+						type: 'delete',
+					},
+				];
+
+			const items: Array<CardToolbarItemOptions | ToolbarItemOptions> = [
 				{
+					key: 'copy',
+					type: 'copy',
+				},
+				{
+					key: 'delete',
 					type: 'delete',
 				},
 			];
-
-		const items: Array<CardToolbarItemOptions | ToolbarItemOptions> = [
-			{
-				type: 'copy',
-			},
-			{
-				type: 'delete',
-			},
-		];
-		if (isMobile) return items;
-		const resizerItems: (CardToolbarItemOptions | ToolbarItemOptions)[] = [
-			{
-				type: 'input',
-				placeholder: language
-					.get('image', 'toolbbarWidthTitle')
-					.toString(),
-				prefix: 'W:',
-				value: value?.size?.width || 0,
-				didMount: (node) => {
-					this.widthInput = node.find('input[type=input]');
+			if (isMobile) return items;
+			const resizerItems: (
+				| CardToolbarItemOptions
+				| ToolbarItemOptions
+			)[] = [
+				{
+					key: 'width',
+					type: 'input',
+					placeholder: language
+						.get('image', 'toolbbarWidthTitle')
+						.toString(),
+					prefix: 'W:',
+					value: value?.size?.width || 0,
+					didMount: (node) => {
+						this.widthInput = node.find('input[type=input]');
+					},
+					onChange: (value) => {
+						const height = Math.round(
+							parseInt(value, 10) * (this.image?.rate || 1),
+						);
+						this.onInputChange(value, height);
+					},
 				},
-				onChange: (value) => {
-					const height = Math.round(
-						parseInt(value, 10) * (this.image?.rate || 1),
-					);
-					this.onInputChange(value, height);
+				{
+					key: 'height',
+					type: 'input',
+					placeholder: language
+						.get('image', 'toolbbarHeightTitle')
+						.toString(),
+					prefix: 'H:',
+					value: value?.size?.height || 0,
+					didMount: (node) => {
+						this.heightInput = node.find('input[type=input]');
+					},
+					onChange: (value) => {
+						const width = Math.round(
+							parseInt(value, 10) / (this.image?.rate || 1),
+						);
+						this.onInputChange(width, value);
+					},
 				},
-			},
-			{
-				type: 'input',
-				placeholder: language
-					.get('image', 'toolbbarHeightTitle')
-					.toString(),
-				prefix: 'H:',
-				value: value?.size?.height || 0,
-				didMount: (node) => {
-					this.heightInput = node.find('input[type=input]');
+				{
+					key: 'resize',
+					type: 'button',
+					content:
+						'<span class="data-icon data-icon-huanyuan"></span>',
+					title: language.get<string>(
+						'image',
+						'toolbarReductionTitle',
+					),
+					onClick: () => {
+						value = this.getValue();
+						this.onInputChange(
+							value?.size?.naturalWidth || 0,
+							value?.size?.naturalHeight || 0,
+						);
+					},
 				},
-				onChange: (value) => {
-					const width = Math.round(
-						parseInt(value, 10) / (this.image?.rate || 1),
-					);
-					this.onInputChange(width, value);
+			];
+			const typeItems: (CardToolbarItemOptions | ToolbarItemOptions)[] = [
+				{
+					key: 'block',
+					type: 'button',
+					content:
+						'<span class="data-icon data-icon-block-image"></span>',
+					title: language.get<string>('image', 'displayBlockTitle'),
+					onClick: () => {
+						this.type = CardType.BLOCK;
+					},
 				},
-			},
-			{
-				type: 'button',
-				content: '<span class="data-icon data-icon-huanyuan"></span>',
-				title: language.get<string>('image', 'toolbarReductionTitle'),
-				onClick: () => {
-					value = this.getValue();
-					this.onInputChange(
-						value?.size?.naturalWidth || 0,
-						value?.size?.naturalHeight || 0,
-					);
+				{
+					key: 'inline',
+					type: 'button',
+					content:
+						'<span class="data-icon data-icon-inline-image"></span>',
+					title: language.get<string>('image', 'displayInlineTitle'),
+					onClick: () => {
+						this.type = CardType.INLINE;
+					},
 				},
-			},
-		];
-		const typeItems: (CardToolbarItemOptions | ToolbarItemOptions)[] = [
-			{
-				type: 'button',
-				content:
-					'<span class="data-icon data-icon-block-image"></span>',
-				title: language.get<string>('image', 'displayBlockTitle'),
-				onClick: () => {
-					this.type = CardType.BLOCK;
-				},
-			},
-			{
-				type: 'button',
-				content:
-					'<span class="data-icon data-icon-inline-image"></span>',
-				title: language.get<string>('image', 'displayInlineTitle'),
-				onClick: () => {
-					this.type = CardType.INLINE;
-				},
-			},
-		];
-		const imagePlugin =
-			this.editor.plugin.findPlugin<ImageOptions>('image');
-		return items.concat([
-			...(imagePlugin?.options?.enableResizer === false
-				? []
-				: resizerItems),
-			...(imagePlugin?.options?.enableTypeSwitch === false
-				? []
-				: typeItems),
-		]);
+			];
+			const imagePlugin = editor.plugin.findPlugin<ImageOptions>('image');
+			return items.concat([
+				...(imagePlugin?.options?.enableResizer === false
+					? []
+					: resizerItems),
+				...(imagePlugin?.options?.enableTypeSwitch === false
+					? []
+					: typeItems),
+			]);
+		};
+		const options =
+			editor.plugin.findPlugin<ImageOptions>('image')?.options;
+		if (options?.cardToolbars) {
+			return options.cardToolbars(getItems(), this.editor);
+		}
+		return getItems();
 	}
 
 	onActivate(activated: boolean) {
 		super.onActivate(activated);
-		if (activated) this.image?.focus();
+		if (activated && !this.selectedByOther) this.image?.focus();
 		else this.image?.blur();
 	}
 
@@ -253,13 +291,18 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 		return this.image?.root;
 	}
 
+	writeHistoryOnValueChange() {
+		if (this.loading) return false;
+		return;
+	}
+
 	render(loadingBg?: string): string | void | NodeInterface {
 		const value = this.getValue();
 		if (!value) return;
+		const editor = this.editor;
 		if (!this.image || this.image.root.length === 0) {
-			const imagePlugin =
-				this.editor.plugin.findPlugin<ImageOptions>('image');
-			this.image = new Image(this.editor, {
+			const imagePlugin = editor.plugin.findPlugin<ImageOptions>('image');
+			this.image = new Image(editor, {
 				root: this.root,
 				container: this.getCenter(),
 				status: value.status || 'done',
@@ -273,20 +316,41 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 				enableResizer: imagePlugin?.options?.enableResizer,
 				onBeforeRender: (status, src) => {
 					const imagePlugin =
-						this.editor.plugin.findPlugin<ImageOptions>('image');
+						editor.plugin.findPlugin<ImageOptions>('image');
 					if (imagePlugin) {
 						const { onBeforeRender } = imagePlugin.options || {};
-						if (onBeforeRender) return onBeforeRender(status, src);
+						if (onBeforeRender)
+							return onBeforeRender(status, src, this.editor);
 					}
 					return src;
 				},
 				onChange: (size, loaded) => {
-					if (size) this.setSize(size, loaded);
+					if (isEngine(editor) && !editor.readonly && size)
+						this.setSize(size, loaded);
 				},
 				onError: () => {
 					this.isLocalError = true;
 					this.didUpdate();
 				},
+				onLoad: () => {
+					if (
+						this.image?.size &&
+						(!value.size?.naturalHeight ||
+							!value.size?.naturalWidth)
+					) {
+						const { naturalHeight, naturalWidth } = this.image.size;
+						this.setSize(
+							{
+								...value.size,
+								naturalHeight,
+								naturalWidth,
+							} as Size,
+							true,
+						);
+					}
+					if (this.activated) this.image?.focus();
+				},
+				maxHeight: imagePlugin?.options?.maxHeight,
 			});
 		} else {
 			this.image.changeUrl(value.src);
@@ -295,6 +359,7 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 			this.image.size.width = value.size?.width || 0;
 			this.image.size.height = value.size?.height || 0;
 			if (value.percent) this.image.setProgressPercent(value.percent);
+			this.image.resizer?.destroy();
 		}
 		this.image.render(loadingBg);
 	}
@@ -303,10 +368,12 @@ class ImageComponent<T extends ImageValue = ImageValue> extends Card<T> {
 		super.didUpdate();
 		this.toolbarModel?.getContainer()?.remove();
 		this.toolbarModel?.create();
+		this.toolbarModel?.setDefaultAlign('top');
 	}
 
 	didRender() {
-		super.didRender();
+		const value = this.getValue();
+		if (value.status === 'done') super.didRender();
 		this.toolbarModel?.setDefaultAlign('top');
 	}
 }

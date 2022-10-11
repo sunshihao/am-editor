@@ -19,7 +19,7 @@ new Engine(...,{ plugins:[Hr], cards:[HrComponent]})
 
 ## Optional
 
-### hot key
+### Hotkey
 
 Default shortcut key `mod+shift+e`
 
@@ -32,25 +32,6 @@ new Engine(...,{
          "hr":{
              //Modify shortcut keys
              hotkey: "shortcut key"
-         }
-     }
-  })
-```
-
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-Hr plugin markdown syntax is `---`
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-     config:{
-         "hr":{
-             //Close markdown
-             markdown:false
          }
      }
   })

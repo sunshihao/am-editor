@@ -1,5 +1,6 @@
+import tinycolor from 'tinycolor2';
 import { NodeInterface } from '../types/node';
-import { DATA_ELEMENT, DATA_ID, EDITABLE } from '../constants/root';
+import { DATA_ELEMENT, DATA_ID, EDITABLE, UI } from '../constants/root';
 import { EditorInterface } from '../types/editor';
 import {
 	SchemaInterface,
@@ -11,7 +12,9 @@ import {
 } from '../types';
 import {
 	ANCHOR_SELECTOR,
+	CARD_EDITABLE_KEY,
 	CARD_ELEMENT_KEY,
+	CARD_KEY,
 	CARD_SELECTOR,
 	CURSOR_SELECTOR,
 	FOCUS_SELECTOR,
@@ -20,7 +23,6 @@ import {
 	escape,
 	unescape,
 	removeUnit,
-	toHex,
 	transformCustomTags,
 	getListStyle,
 	getStyleMap,
@@ -31,34 +33,35 @@ import { isNodeEntry } from '../node/utils';
 
 const attrsToString = (attributes: { [k: string]: string }) => {
 	let attrsString = '';
-	Object.keys(attributes).forEach((key) => {
+	for (const key in attributes) {
 		if (key === 'style') {
-			return;
+			continue;
 		}
 		const val = escape(attributes[key]);
 		attrsString += ' '.concat(key, '="').concat(val, '"');
-	});
+	}
 	return attrsString.trim();
 };
 
 const stylesToString = (styles: { [k: string]: string }) => {
 	let stylesString = '';
-	Object.keys(styles).forEach((key) => {
+	for (let key in styles) {
+		key = key.toLowerCase();
 		let val = escape(styles[key]);
 
 		if (
 			/^(padding|margin|text-indent)/.test(key) &&
 			removeUnit(val) === 0
 		) {
-			return;
+			continue;
 		}
 
-		if (/[^a-z]color$/.test(key)) {
-			val = toHex(val);
+		if (key.endsWith('color')) {
+			val = tinycolor(val).toHexString();
 		}
 
 		stylesString += ' '.concat(key, ': ').concat(val, ';');
-	});
+	}
 	return stylesString.trim();
 };
 
@@ -77,11 +80,14 @@ class Parser implements ParserInterface {
 	) {
 		this.editor = editor;
 		this.isNormalize = isNormalize;
-		const { node } = this.editor;
 		if (typeof source === 'string') {
 			source = source.replace(/<a\s{0,1000}\/>/gi, '<a></a>');
 			source = source.replace(/<a(\s[^>]+?)\/>/gi, (_, t) => {
 				return '<a'.concat(t, '></a>');
+			});
+			// 移除掉img事件绑定，img 标签在 DOMParser 中会加载 onload 和 onerror 事件
+			source = source?.replace(/<img .*>/gi, (str) => {
+				return str.replace(/\son[a-zA-Z]{1,20}=/g, 'notallow=');
 			});
 			// 在 p 里包含 div 标签时 DOMParser 解析错误
 			// <p><div>foo</div></p>
@@ -89,22 +95,13 @@ class Parser implements ParserInterface {
 			// <paragraph><div>foo</div></paragraph>
 			source = source
 				.replace(/<p(>|\s+[^>]*>)/gi, '<paragraph$1')
-				.replace(/<\/p>/gi, '</paragraph>');
+				.replace(/<\/p(>|\s+[^>]*>)/gi, '</paragraph$1');
 			source = transformCustomTags(source);
 			const doc = new DOMParser().parseFromString(source, 'text/html');
-			this.root = $(doc.body);
-			const p = $('<p></p>');
-			const paragraphs = this.root.find('paragraph');
-			paragraphs.each((_, index) => {
-				const cNode = paragraphs.eq(index);
-				if (!cNode) return;
-				const pNode = p.clone();
-				const attributes = cNode.attributes();
-				Object.keys(attributes).forEach((name) => {
-					pNode.attributes(name, attributes[name]);
-				});
-				node.replace(cNode, pNode, true);
-			});
+			const html = doc.body.innerHTML
+				.replace(/<paragraph(>|\s+[^>]*>)/gi, '<p$1')
+				.replace(/<\/paragraph(>|\s+[^>]*>)/gi, '</p$1');
+			this.root = $(`<div>${html}</div>`);
 		} else if (isNodeEntry(source)) {
 			this.root = source;
 		} else {
@@ -125,37 +122,34 @@ class Parser implements ParserInterface {
 			const { rule } = value;
 			oldRules.push(rule);
 			const { name, attributes, style } = value.node;
-			delete attributes[DATA_ID];
+			if (name !== 'card') delete attributes[DATA_ID];
+			delete attributes['id'];
 			const newNode = $(`<${name} />`);
 			nodeApi.setAttributes(newNode, {
 				...attributes,
 				style,
 			});
 			//把旧节点的子节点追加到新节点下
-			newNode.append(node.children());
+			newNode.get<Element>()?.append(...node.get<Element>()!.childNodes);
 			if (node.isCard()) {
 				node.replaceWith(newNode);
 				return newNode;
 			} else {
-				if (!nodeApi.isBlock(newNode, schema)) {
-					if (value.replace) {
-						node.replaceWith(newNode);
-						node = newNode;
-					} else {
-						//把包含旧子节点的新节点追加到旧节点下
-						node.append(newNode);
-					}
-					if (!convertAfterNode || convertAfterNode.length === 0)
-						convertAfterNode = newNode;
+				if (value.replace) {
+					node.replaceWith(newNode);
+					node = newNode;
 				} else {
-					if (value.replace) {
-						node.replaceWith(newNode);
-						node = newNode;
-					} else {
-						node.append(newNode);
-					}
-					if (!convertAfterNode || convertAfterNode.length === 0)
-						convertAfterNode = newNode;
+					//把包含旧子节点的新节点追加到旧节点下
+					newNode.each((newNode) => {
+						const oldNode = node.get<Element>();
+						if (oldNode && oldNode instanceof Element)
+							oldNode.append(newNode);
+					});
+				}
+				if (!convertAfterNode || convertAfterNode.length === 0)
+					convertAfterNode = newNode;
+
+				if (nodeApi.isBlock(newNode, schema)) {
 					//排除之前的过滤规则后再次过滤
 					value = conversion.transform(
 						newNode,
@@ -174,8 +168,9 @@ class Parser implements ParserInterface {
 		schema: SchemaInterface,
 		conversion: ConversionInterface | null,
 	) {
-		const nodeApi = this.editor.node;
-		const inlineApi = this.editor.inline;
+		const editor = this.editor;
+		const nodeApi = editor.node;
+		const inlineApi = editor.inline;
 		//转换标签和分割 mark 和 inline
 		// 不分割，就只转换卡片
 		if (!this.isNormalize) {
@@ -259,7 +254,7 @@ class Parser implements ParserInterface {
 		};
 		root.traverse((node) => {
 			if (
-				node.equal(root) ||
+				node[0] === root[0] ||
 				['style', 'script', 'meta'].includes(node.name)
 			)
 				return;
@@ -269,6 +264,7 @@ class Parser implements ParserInterface {
 				if (conversion && (!schema.getType(node) || isCard)) {
 					const newNode = this.convert(conversion, node, schema);
 					if (newNode) {
+						if (isCard) return true;
 						return newNode;
 					}
 				}
@@ -280,8 +276,8 @@ class Parser implements ParserInterface {
 					let rule = schema.getRule(node);
 					if (rule) {
 						oldRules.push(rule);
-						if (node.children().length === 0) {
-							this.editor.mark.repairCursor(node);
+						if (node.get<Element>()?.childNodes.length === 0) {
+							editor.mark.repairCursor(node);
 						}
 						let newNode = filter(node);
 						if (!newNode) return;
@@ -374,6 +370,28 @@ class Parser implements ParserInterface {
 					//当前节点是 inline 节点，inline 节点不允许嵌套、不允许放入mark节点
 					return inlineApi.flat(node, schema);
 				}
+			} else if (node.isText()) {
+				const text = node.text();
+				if (/^\n/.test(text) || /^\s/.test(text)) {
+					const element = node.get<Text>()!;
+					const prev = element.previousSibling;
+					const next = element.nextSibling;
+					const prevType: string | undefined = prev
+						? schema.getType(prev)
+						: undefined;
+					const nextType: string | undefined = next
+						? schema.getType(next)
+						: undefined;
+					// 节点前面
+					if (!prev && next && (!nextType || nextType === 'block')) {
+						node.remove();
+						return;
+					}
+					// 节点后面
+					if (!next && prev && (!prevType || prevType === 'block')) {
+						node.remove();
+					}
+				}
 			}
 		});
 	}
@@ -396,6 +414,10 @@ class Parser implements ParserInterface {
 			if (child.isElement()) {
 				let name = child.name;
 				let attributes = child.attributes();
+				if (attributes[DATA_ELEMENT] === UI) {
+					child = child.next();
+					continue;
+				}
 				let styles = getStyleMap(attributes.style || '');
 				//删除属性中的style属性
 				delete attributes.style;
@@ -418,8 +440,11 @@ class Parser implements ParserInterface {
 						if (
 							parent &&
 							nodeApi.isBlock(parent, schema) &&
-							parent.children().length === 1 &&
-							child.children().length === 0
+							// 子节点只有一个
+							parent.get<HTMLElement>()?.childNodes.length ===
+								1 &&
+							// 没有子节点
+							child.get<HTMLElement>()?.childNodes.length === 0
 						) {
 							const newChild = $('<br />');
 							child.before(newChild);
@@ -454,7 +479,12 @@ class Parser implements ParserInterface {
 					}
 				}
 				// Card不遍历子节点
-				if (name !== 'card' || includeCard) {
+				if (
+					(name !== 'card' &&
+						(!attributes[CARD_KEY] ||
+							attributes[CARD_EDITABLE_KEY] === 'true')) ||
+					includeCard
+				) {
 					this.traverse(
 						child,
 						schema,
@@ -519,14 +549,15 @@ class Parser implements ParserInterface {
 		customTags: boolean = false,
 	) {
 		const result: Array<string> = [];
-		const nodeApi = this.editor.node;
+		const editor = this.editor;
+		const nodeApi = editor.node;
 		const root = this.root.clone(true);
 		if (schema) this.normalize(root, schema, conversion);
-		this.editor.trigger('parse:value-before', root);
+		editor.trigger('parse:value-before', root);
 		this.traverse(root, schema, conversion, {
 			onOpen: (child, name, attributes, styles) => {
 				if (
-					this.editor.trigger(
+					editor.trigger(
 						'parse:value',
 						child,
 						attributes,
@@ -554,7 +585,7 @@ class Parser implements ParserInterface {
 
 				if (
 					nodeApi.isVoid(name, schema ? schema : undefined) &&
-					child.children().length === 0
+					child.get<HTMLElement>()?.childNodes.length === 0
 				) {
 					result.push(' />');
 				} else {
@@ -579,7 +610,7 @@ class Parser implements ParserInterface {
 				result.push('</'.concat(name, '>'));
 			},
 		});
-		this.editor.trigger('parse:value-after', result);
+		editor.trigger('parse:value-after', result);
 		//移除前后的换行符
 		if (result.length > 0 && /^\n+/g.test(result[0])) {
 			result[0] = result[0].replace(/^\n+/g, '');
@@ -601,23 +632,18 @@ class Parser implements ParserInterface {
 	 */
 	toHTML(inner?: Node, outter?: Node) {
 		const element = $('<div />');
-		const style = this.editor.container.css();
+		const editor = this.editor;
+		const style = editor.container.css();
 		if (inner && outter) {
 			$(inner).append(this.root).css(style);
 			element.append(outter);
 		} else {
 			element.append(this.root);
 		}
-		this.editor.trigger('parse:html-before', this.root);
-		element.traverse((domNode) => {
-			if (domNode.isText()) return;
-			if (domNode.css('user-select') === 'none') {
-				domNode.remove();
-			}
-		});
-		this.editor.trigger('parse:html', element);
-		this.editor.trigger('parse:html-after', element);
-		return element.html();
+		editor.trigger('parse:html-before', this.root);
+		editor.trigger('parse:html', element);
+		editor.trigger('parse:html-after', element);
+		return element.html().replace(/\u200b/g, '');
 	}
 
 	/**
@@ -652,17 +678,29 @@ class Parser implements ParserInterface {
 	) {
 		const root = this.root.clone(true);
 		const result: Array<string> = [];
+		const editor = this.editor;
 		this.traverse(
 			root,
 			null,
 			null,
 			{
-				onOpen: (node, name) => {
+				onOpen: (node, name, attributes, styles) => {
+					if (
+						editor.trigger(
+							'parse:text',
+							node,
+							attributes,
+							styles,
+							result,
+						) === false
+					) {
+						return false;
+					}
 					if (name === 'br') {
 						result.push('\n');
 					}
 					if (formatOL && node.name === 'li') {
-						if (node.hasClass('data-list-item')) {
+						if (node.hasClass(editor.list.CUSTOMZIE_LI_CLASS)) {
 							return;
 						}
 						const parent = node.parent();
@@ -676,30 +714,35 @@ class Parser implements ParserInterface {
 							result.push(getListStyle(styleType) + ' ');
 						}
 					}
+					return;
 				},
 				onText: (_, text) => {
 					text = unescape(text);
 					text = text.replace(/\u00a0/g, ' ');
+					text = text.replace(/\u200b/g, '');
 					result.push(text);
 				},
 				onClose: (node, name) => {
+					const nodeApi = editor.node;
 					if (
 						name === 'p' ||
-						this.editor.node.isBlock(
-							node,
-							schema || this.editor.schema,
-						)
+						nodeApi.isBlock(node, schema || editor.schema)
 					) {
-						const children = node.children().toArray();
+						const children = Array.from(
+							node.get<HTMLElement>()!.childNodes,
+						);
 						// 子节点还有block节点，则不换行
 						if (
-							children.some((child) => child.name === 'br') ||
-							children.some((child) =>
-								this.editor.node.isBlock(
+							children.length === 0 ||
+							children.some((child) => {
+								if (child instanceof Text) return false;
+								if (child.nodeName === 'BR') return true;
+								const type = (schema || editor.schema).getType(
 									child,
-									schema || this.editor.schema,
-								),
-							)
+								);
+								if (!type || type === 'block') return true;
+								return false;
+							})
 						)
 							return;
 						result.push('\n');

@@ -228,5 +228,14 @@ export default {
 		searchEmtpy: {
 			title: 'No matching card',
 		},
+		lightblock: {
+			title: 'Lightblock',
+		},
+		mulitCodeblock: {
+			title: 'Mulit Codeblock',
+		},
+		tag: {
+			title: 'Tag',
+		},
 	},
 };

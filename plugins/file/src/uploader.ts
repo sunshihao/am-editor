@@ -11,9 +11,9 @@ import {
 	CARD_VALUE_KEY,
 	encodeCardValue,
 } from '@aomao/engine';
-
+import { RequestData, RequestHeaders } from '@aomao/engine';
 import FileComponent from './component';
-import type { FileValue } from './component';
+import type { FileValue } from './types';
 
 export interface FileUploaderOptions extends PluginOptions {
 	/**
@@ -31,7 +31,7 @@ export interface FileUploaderOptions extends PluginOptions {
 	/**
 	 * 额外携带数据上传
 	 */
-	data?: {};
+	data?: RequestData;
 	/**
 	 * 请求类型，默认 multipart/form-data;
 	 */
@@ -47,11 +47,11 @@ export interface FileUploaderOptions extends PluginOptions {
 	/**
 	 * 请求头
 	 */
-	headers?: { [key: string]: string } | (() => { [key: string]: string });
+	headers?: RequestHeaders;
 	/**
 	 * 文件接收的格式，默认 "*"
 	 */
-	accept?: string | Array<string>;
+	accept?: string | string[] | Record<string, string>;
 	/**
 	 * 文件选择限制数量
 	 */
@@ -76,6 +76,10 @@ export interface FileUploaderOptions extends PluginOptions {
 	};
 }
 
+const DROP_FILES = 'drop:files';
+const PASTE_EVENT = 'paste:event';
+const PASTE_EACH = 'paste:each';
+
 export default class<
 	T extends FileUploaderOptions = FileUploaderOptions,
 > extends Plugin<T> {
@@ -85,42 +89,44 @@ export default class<
 		return 'file-uploader';
 	}
 
-	extensionNames = ['*'];
+	extensionNames: Record<string, string> | string[] = { '*': '*' };
 
 	init() {
-		if (isEngine(this.editor)) {
-			this.editor.on('drop:files', (files) => this.dropFiles(files));
-			this.editor.on('paste:event', ({ files }) =>
-				this.pasteFiles(files),
-			);
-			this.editor.on('paste:each', (node) => this.pasteEach(node));
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.on(DROP_FILES, this.dropFiles);
+			editor.on(PASTE_EVENT, this.pasteFiles);
+			editor.on(PASTE_EACH, this.pasteEach);
 		}
-		let { accept } = this.options;
-		const names: Array<string> = [];
+		let accept = this.options?.accept || this.options?.file?.accept;
 		if (typeof accept === 'string') accept = accept.split(',');
-
-		(accept || []).forEach((name) => {
-			name = name.trim();
-			const newName = name.split('.').pop();
-			if (newName) names.push(newName);
-		});
-		if (names.length > 0) this.extensionNames = names;
+		if (Array.isArray(accept)) {
+			const names: string[] = [];
+			(accept || []).forEach((name) => {
+				name = name.trim();
+				const newName = name.split('.').pop();
+				if (newName) names.push(newName);
+			});
+			if (names.length > 0) this.extensionNames = names;
+		} else if (typeof accept === 'object') {
+			this.extensionNames = accept;
+		}
 	}
 
 	isFile(file: File) {
 		const name = getExtensionName(file) ?? '';
-		return (
-			this.extensionNames.indexOf('*') >= 0 ||
-			this.extensionNames.indexOf(name) >= 0
-		);
+		const names = Array.isArray(this.extensionNames)
+			? this.extensionNames
+			: Object.keys(this.extensionNames);
+		return names.indexOf('*') >= 0 || names.indexOf(name) >= 0;
 	}
 
 	async execute(files?: Array<File> | MouseEvent) {
-		if (!isEngine(this.editor)) return;
-		const { request, card, language } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { request, card, language } = editor;
 		const {
 			action,
-			data,
 			type,
 			contentType,
 			multiple,
@@ -129,17 +135,19 @@ export default class<
 			headers,
 			name,
 		} = this.options;
+		let data = this.options.data;
+		if (typeof data === 'function') {
+			data = await data();
+		}
 		const { parse } = this.options;
 		const limitSize = this.options.limitSize || 5 * 1024 * 1024;
 		if (!Array.isArray(files)) {
+			const accepts = Array.isArray(this.extensionNames)
+				? '.' + this.extensionNames.join(',.')
+				: Object.values(this.extensionNames).join(',');
 			files = await request.getFiles({
 				event: files,
-				accept:
-					isAndroid || this.extensionNames.indexOf('*') > -1
-						? '*'
-						: this.extensionNames.length > 0
-						? '.' + this.extensionNames.join(',.')
-						: '',
+				accept: isAndroid ? '*' : accepts.length > 0 ? accepts : '',
 				multiple,
 			});
 		}
@@ -152,10 +160,11 @@ export default class<
 				contentType,
 				crossOrigin,
 				withCredentials,
-				headers: typeof headers === 'function' ? headers() : headers,
+				headers,
 				onBefore: (file) => {
 					if (file.size > limitSize) {
-						this.editor.messageError(
+						editor.messageError(
+							'upload-limit',
 							language
 								.get('file', 'uploadLimitError')
 								.toString()
@@ -170,7 +179,7 @@ export default class<
 				},
 				onReady: (fileInfo) => {
 					if (
-						!isEngine(this.editor) ||
+						!isEngine(editor) ||
 						!!this.cardComponents[fileInfo.uid]
 					)
 						return;
@@ -267,7 +276,7 @@ export default class<
 							message:
 								typeof result.data === 'string'
 									? result.data
-									: this.editor.language.get<string>(
+									: language.get<string>(
 											'file',
 											'uploadError',
 									  ),
@@ -279,7 +288,7 @@ export default class<
 								: {
 										...result.data,
 								  };
-						this.editor.card.update(component.id, value);
+						editor.card.update(component.id, value);
 					}
 					delete this.cardComponents[file.uid || ''];
 				},
@@ -290,10 +299,7 @@ export default class<
 						status: 'error',
 						message:
 							error.message ||
-							this.editor.language.get<string>(
-								'file',
-								'uploadError',
-							),
+							language.get<string>('file', 'uploadError'),
 					});
 					delete this.cardComponents[file.uid || ''];
 				},
@@ -304,27 +310,29 @@ export default class<
 		return;
 	}
 
-	dropFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	dropFiles = (files: Array<File>) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isFile(file));
 		if (files.length === 0) return;
-		this.editor.command.execute('file-uploader', files);
+		editor.command.execute('file-uploader', files);
 		return false;
-	}
+	};
 
-	pasteFiles(files: Array<File>) {
-		if (!isEngine(this.editor)) return;
+	pasteFiles = ({ files }: Record<'files', File[]>) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		files = files.filter((file) => this.isFile(file));
 		if (files.length === 0) return;
-		this.editor.command.execute(
+		editor.command.execute(
 			'file-uploader',
 			files.filter((file) => this.isFile(file)),
 			files,
 		);
 		return false;
-	}
+	};
 
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
 		//是卡片，并且还没渲染
 		if (node.isCard() && node.attributes(READY_CARD_KEY)) {
 			if (node.attributes(READY_CARD_KEY) !== 'file') return;
@@ -342,6 +350,15 @@ export default class<
 				);
 			}
 			return;
+		}
+	};
+
+	destroy() {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off(DROP_FILES, this.dropFiles);
+			editor.off(PASTE_EVENT, this.pasteFiles);
+			editor.off(PASTE_EACH, this.pasteEach);
 		}
 	}
 }

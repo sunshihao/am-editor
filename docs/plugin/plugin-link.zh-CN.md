@@ -5,19 +5,19 @@
 ## 安装
 
 ```bash
-$ yarn add @aomao/plugin-link
+yarn add @aomao/plugin-link
 ```
 
 `Vue3` 使用
 
 ```bash
-$ yarn add @aomao/plugin-link-vue
+yarn add @aomao/plugin-link-vue
 ```
 
 `Vue2` 使用
 
 ```bash
-$ yarn add am-editor-link-vue2
+yarn add am-editor-link-vue2
 ```
 
 添加到引擎
@@ -53,25 +53,6 @@ new Engine(...,{
  })
 ```
 
-### Markdown
-
-默认支持 markdown，传入`false`关闭
-
-Link 插件 markdown 语法为`[文本](链接地址)` 回车后触发
-
-```ts
-markdown?: boolean;//默认开启，false 关闭
-//使用配置
-new Engine(...,{
-    config:{
-        "link":{
-            //关闭markdown
-            markdown:false
-        }
-    }
- })
-```
-
 ### onConfirm
 
 可对要修改的 url 或者 文本 进行修改
@@ -83,6 +64,22 @@ onConfirm?: (
     text: string,
     link: string,
 ) => Promise<{ text: string; link: string }>;
+```
+
+### enableToolbar
+
+是否启用对链接编辑的工具栏
+
+```ts
+enableToolbar?: boolean;
+```
+
+### onLinkClick
+
+在编辑模式下单击链接时触发
+
+```ts
+onLinkClick?: (e: MouseEvent, link: string) => void;
 ```
 
 ## 命令

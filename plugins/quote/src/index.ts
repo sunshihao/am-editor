@@ -3,15 +3,21 @@ import {
 	isEngine,
 	NodeInterface,
 	BlockPlugin,
-	PluginEntry,
 	PluginOptions,
 } from '@aomao/engine';
+import type MarkdownIt from 'markdown-it';
 import './index.css';
 
 export interface QuoteOptions extends PluginOptions {
 	hotkey?: string | Array<string>;
 	markdown?: boolean;
 }
+
+const PARSE_HTML = 'parse:html';
+const KEYDOWN_BACKSPACE = 'keydown:backspace';
+const KEYDOWN_ENTER = 'keydown:enter';
+const PASTE_EACH = 'paste:each';
+const MARKDOWN_IT = 'markdown-it';
 export default class<
 	T extends QuoteOptions = QuoteOptions,
 > extends BlockPlugin<T> {
@@ -25,28 +31,22 @@ export default class<
 
 	init() {
 		super.init();
-		this.editor.schema.addAllowIn(this.tagName);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		if (isEngine(this.editor)) {
-			this.editor.on('paste:each', (child) => this.pasteHtml(child));
-			this.editor.on('keydown:backspace', (event) =>
-				this.onBackspace(event),
-			);
-			this.editor.on('keydown:enter', (event) => this.onEnter(event));
-			this.editor.on('paste:markdown', (child) =>
-				this.pasteMarkdown(child),
-			);
-			this.editor.on('paste:each', (child) => this.pasteEach(child));
-			this.editor.on(
-				'paste:markdown-check',
-				(child) => !this.checkMarkdown(child)?.match,
-			);
+		const editor = this.editor;
+		editor.schema.addAllowIn(this.tagName);
+		editor.on(PARSE_HTML, this.parseHtml);
+		if (isEngine(editor)) {
+			editor.on(PASTE_EACH, this.pasteHtml);
+			editor.on(KEYDOWN_BACKSPACE, this.onBackspace);
+			editor.on(KEYDOWN_ENTER, this.onEnter);
+			editor.on(PASTE_EACH, this.pasteEach);
+			editor.on(MARKDOWN_IT, this.markdownIt);
 		}
 	}
 
 	execute() {
-		if (!isEngine(this.editor)) return;
-		const { change, block, node } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, block, node } = editor;
 		if (!this.queryState()) {
 			block.wrap(`<${this.tagName} />`);
 		} else {
@@ -61,8 +61,9 @@ export default class<
 	}
 
 	queryState() {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		const blocks = change.blocks;
 		if (blocks.length === 0) {
 			return false;
@@ -75,106 +76,24 @@ export default class<
 		return this.options.hotkey || 'mod+shift+u';
 	}
 
-	//设置markdown
-	markdown(event: KeyboardEvent, text: string, block: NodeInterface) {
-		if (this.options.markdown === false || !isEngine(this.editor)) return;
-		const { node, command } = this.editor;
-		const blockApi = this.editor.block;
-		const plugin = blockApi.findPlugin(block);
-		// fix: 列表、引用等 markdown 快捷方式不应该在标题内生效
-		if (
-			block.name !== 'p' ||
-			(plugin &&
-				(plugin.constructor as PluginEntry).pluginName === 'heading')
-		) {
-			return;
-		}
-		if (['>'].indexOf(text) < 0) return;
-		event.preventDefault();
-		blockApi.removeLeftText(block);
-		if (node.isEmpty(block)) {
-			block.empty();
-			block.append('<br />');
-		}
-		command.execute((this.constructor as PluginEntry).pluginName);
-		return false;
-	}
-
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
 		if (node.isText() && node.parent()?.name === this.tagName) {
 			this.editor.node.wrap(node, $('<p></p>'));
 		}
-	}
+	};
 
-	checkMarkdown(node: NodeInterface) {
-		if (!isEngine(this.editor) || !this.markdown || !node.isText()) return;
-
-		const text = node.text();
-		if (!text) return;
-
-		const reg = /(^|\r\n|\n)([>]{1,})/;
-		const match = reg.exec(text);
-		return {
-			reg,
-			match,
-		};
-	}
-
-	pasteMarkdown(node: NodeInterface) {
-		const result = this.checkMarkdown(node);
-		if (!result) return;
-		const { match } = result;
-		if (!match) return;
-
-		const text = node.text();
-		let newText = match[1] || '';
-		const rows = text.split(/\n|\r\n/);
-		let nodes: Array<string> = [];
-		rows.forEach((row) => {
-			const match = /^([>]{1,})/.exec(row);
-			if (match) {
-				const codeLength = match[1].length;
-				const content = row.substr(
-					/^\s+/.test(row.substr(codeLength))
-						? codeLength + 1
-						: codeLength,
-				);
-				const container = $('<div></div>');
-				container.html(content);
-				const childNodes = container.children();
-				if (
-					childNodes.length > 1 ||
-					(childNodes.length === 1 &&
-						!this.editor.node.isBlock(childNodes[0]) &&
-						!childNodes.eq(0)?.isBlockCard())
-				) {
-					nodes.push(`<p>${content}</p>`);
-				} else {
-					nodes.push(content);
-				}
-			} else if (nodes.length > 0) {
-				newText +=
-					`<${this.tagName}>${nodes.join('')}</${this.tagName}>` +
-					'\n' +
-					row +
-					'\n';
-				nodes = [];
-			} else {
-				newText += row + '\n';
-			}
-		});
-		if (nodes.length > 0) {
-			newText +=
-				`<${this.tagName}>${nodes.join('')}</${this.tagName}>` + '\n';
+	markdownIt = (mardown: MarkdownIt) => {
+		if (this.options.markdown !== false) {
+			mardown.enable('blockquote');
 		}
-		node.text(newText);
-	}
+	};
 
-	onBackspace(event: KeyboardEvent) {
-		if (!isEngine(this.editor)) return;
-		const { change, node } = this.editor;
+	onBackspace = (event: KeyboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change, node } = editor;
 		const range = change.range.get();
-		const blockApi = this.editor.block;
+		const blockApi = editor.block;
 
 		const inEnd = blockApi.isLastOffset(range, 'end');
 		if (inEnd && !range.collapsed) {
@@ -192,7 +111,7 @@ export default class<
 				return;
 			}
 		}
-
+		if (!range.collapsed) return;
 		const inFirst = blockApi.isFirstOffset(range, 'start');
 		if (!inFirst) return;
 		const block = blockApi.closest(range.startNode);
@@ -219,12 +138,13 @@ export default class<
 			return false;
 		}
 		return;
-	}
+	};
 
-	onEnter(event: KeyboardEvent) {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
-		const blockApi = this.editor.block;
+	onEnter = (event: KeyboardEvent) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
+		const blockApi = editor.block;
 		const range = change.range.get();
 		// 选区选中最后的节点
 		const block = blockApi.closest(range.endNode);
@@ -240,9 +160,9 @@ export default class<
 			return false;
 		}
 		return;
-	}
+	};
 
-	parseHtml(root: NodeInterface) {
+	parseHtml = (root: NodeInterface) => {
 		root.find('blockquote').css({
 			'margin-top': '5px',
 			'margin-bottom': '5px',
@@ -251,20 +171,33 @@ export default class<
 			'border-left': '3px solid #eee',
 			opacity: '0.6',
 		});
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.name === this.tagName) {
-			const nodeApi = this.editor.node;
+			const nodeApi = editor.node;
 			node.css('padding-left', '');
 			node.css('text-indent', '');
 			if (nodeApi.isEmpty(node)) {
-				node.append('<p><br/></p>');
+				node.empty().append('<p><br/></p>');
 			}
-			this.editor.normalize(node);
+			editor.normalize(node);
 			return false;
 		}
 		return true;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		if (isEngine(editor)) {
+			editor.off(PASTE_EACH, this.pasteHtml);
+			editor.off(KEYDOWN_BACKSPACE, this.onBackspace);
+			editor.off(KEYDOWN_ENTER, this.onEnter);
+			editor.off(PASTE_EACH, this.pasteEach);
+			editor.off(MARKDOWN_IT, this.markdownIt);
+		}
 	}
 }

@@ -31,7 +31,7 @@ new Engine(...,{ plugins:[CodeBlock], cards:[CodeBlockComponent]})
 
 ## Optional
 
-### hot key
+### Hotkey
 
 No shortcut keys by default
 
@@ -48,25 +48,6 @@ new Engine(...,{
                 key:"mod+b",
                 args:["javascript","const test = 123;"]
             }
-        }
-    }
- })
-```
-
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-CodeBlock plugin markdown syntax is ```
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        "codeblock":{
-            //Close markdown
-            markdown:false
         }
     }
  })

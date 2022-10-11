@@ -1,70 +1,163 @@
+import { EventEmitter2 } from 'eventemitter2';
+import isEqual from 'lodash/isEqual';
 import { EngineInterface } from '../types/engine';
 import { Attribute, Member, SelectionInterface } from '../types/ot';
 import { isTransientElement } from './utils';
-import { RangePath } from '../types/range';
+import { RangeInterface, RangePath } from '../types/range';
 import { CardType } from '../card/enum';
+import RangeColoring from './range-coloring';
+import { CardInterface } from '../types/card';
+import { NodeInterface } from '../types/node';
+import Range from '../range';
 
-class OTSelection implements SelectionInterface {
+class OTSelection extends EventEmitter2 implements SelectionInterface {
 	private engine: EngineInterface;
+	private rangeColoring: RangeColoring;
 	currentRangePath?: { start: RangePath; end: RangePath };
+	data: Map<string, Attribute> = new Map();
+	current: Member | null = null;
 
 	constructor(engine: EngineInterface) {
+		super();
 		this.engine = engine;
+		this.rangeColoring = new RangeColoring(engine);
+		engine.container.on('keyup', this.emitSelectChange);
+		engine.container.on('mousedown', this.handleMouseDown);
+		engine.on('scroll', this.handleScroll);
 	}
 
-	getSelections() {
-		const { container } = this.engine;
-		const data: Array<Attribute> = [];
-		const attributes = container.get<Element>()?.attributes;
-		if (!attributes) return data;
-		for (let i = 0; i < attributes.length; i++) {
-			const item = attributes.item(i);
-			if (!item) continue;
-			const { nodeName, nodeValue } = item;
-			if (/^data-selection-/.test(nodeName) && nodeValue) {
-				const value = JSON.parse(decodeURIComponent(nodeValue));
-				if (value) {
-					data.push(value);
+	handleScroll = (node: NodeInterface) => {
+		const children = this.engine.container.get<Element>()?.childNodes;
+		if (!children) return;
+		for (const [key, attr] of this.data) {
+			if (key === this.current?.uuid) continue;
+			if (attr.path?.start.id) {
+				const startOffset = attr.path.start.path[0];
+				const child = children.item(startOffset);
+				if (child && node.equal(child)) {
+					this.rangeColoring.updatePosition();
+					break;
 				}
 			}
 		}
-		return data;
+	};
+
+	handleMouseDown = () => {
+		const container = this.engine.container;
+		container.off('mouseup', this.handleMouseUp);
+		container.off('mousemove', this.emitSelectChange);
+		container.on('mouseup', this.handleMouseUp);
+		container.on('mousemove', this.emitSelectChange);
+	};
+
+	handleMouseUp = () => {
+		const container = this.engine.container;
+		container.off('mouseup', this.handleMouseUp);
+		container.off('mousemove', this.emitSelectChange);
+		setTimeout(() => {
+			this.emitSelectChange();
+		}, 10);
+	};
+
+	getCardResizeRange(card: CardInterface) {
+		if (card?.getSelectionNodes) {
+			const nodes = card.getSelectionNodes();
+			if (nodes.length > 0) {
+				const range = Range.create(this.engine);
+				range.setStart(nodes[0], 0);
+				const end = nodes[nodes.length - 1];
+				range.setEnd(
+					end,
+					end.isText()
+						? end.text().length
+						: end.get<Element>()?.childNodes.length || 0,
+				);
+				return range;
+			}
+		}
+		return null;
+	}
+	private observer: ResizeObserver | null = null;
+	emitSelectChange = (refreshBG = false) => {
+		if (this.engine.change.isComposing()) return;
+		let current = this.engine.change.range.get();
+		this.observer?.disconnect();
+		const card = this.engine.card.find(
+			current.commonAncestorContainer,
+			true,
+		);
+		if (card?.getSelectionNodes) {
+			let newRange = this.getCardResizeRange(card);
+			if (newRange) {
+				current = newRange.cloneRange();
+				this.observer = new ResizeObserver(() => {
+					newRange = this.getCardResizeRange(card);
+					if (newRange) {
+						this.onSelectionChange(newRange, true, refreshBG);
+					} else {
+						this.observer?.disconnect();
+					}
+				});
+				this.observer.observe(card.root.get<Element>()!);
+			}
+		}
+
+		if (
+			!current.commonAncestorNode.isRoot() &&
+			!current.commonAncestorNode.inEditor()
+		) {
+			if (this.current) this.removeAttirbute(this.current.uuid);
+		} else {
+			this.onSelectionChange(current, true, refreshBG, false);
+		}
+	};
+
+	setCurrent(member: Member) {
+		this.current = member;
 	}
 
-	setSelections(data: Array<Attribute>) {
-		const { container } = this.engine;
-		const dataState: { [key: string]: boolean } = {};
-		data.forEach((item) => {
-			if (item) {
-				const name = 'data-selection-'.concat(item.uuid);
-				dataState[name] = true;
-				const value = container.attributes(name);
-				const value_str = encodeURIComponent(JSON.stringify(item));
-				if (value !== value_str) {
-					container.attributes(name, value_str);
-				}
-			}
-		});
-		const attributes = container.get<Element>()?.attributes;
-		if (!attributes) return;
-		for (let i = 0; i < attributes.length; i++) {
-			const item = attributes.item(i);
-			if (!item) continue;
-			const { nodeName } = item;
-			if (/^data-selection-/.test(nodeName) && !dataState[nodeName]) {
-				container.removeAttributes(nodeName);
+	setAttribute(
+		attr: Attribute,
+		member: Member,
+		refreshBG = false,
+		showInfo = false,
+	) {
+		const item = this.data.get(attr.uuid);
+		if (attr.force || !isEqual(item || {}, attr)) {
+			this.data.set(
+				attr.uuid,
+				Object.assign({}, attr, { active: !item }),
+			);
+			if (attr.uuid === this.current?.uuid) {
+				if (refreshBG === true) this.rangeColoring.updatePosition();
+				this.emit('change', attr);
+			} else {
+				this.rangeColoring.render(attr, member, showInfo);
 			}
 		}
 	}
 
-	remove(uuid: string) {
-		const { container } = this.engine;
-		container.removeAttributes(`data-selection-${uuid}`);
+	removeAttirbute(uuid: string) {
+		if (!this.data.has(uuid)) return;
+		this.data.delete(uuid);
+		if (uuid === this.current?.uuid)
+			this.emit('change', { uuid, remove: true });
+		else this.rangeColoring.remove(uuid);
 	}
 
-	updateSelections(currentMember: Member, members: Array<Member>) {
-		const { change, card } = this.engine;
-		const range = change.range.get().cloneRange();
+	getAttribute(uuid: string) {
+		return this.data.get(uuid);
+	}
+
+	onSelectionChange(
+		range: RangeInterface,
+		force = false,
+		refreshBG = false,
+		showInfo = false,
+	) {
+		if (!this.current) return;
+		const { card } = this.engine;
+		range = range.cloneRange();
 		const activeCard = card.active;
 		if (activeCard && !activeCard.isEditable) {
 			const center = activeCard.getCenter();
@@ -79,12 +172,8 @@ class OTSelection implements SelectionInterface {
 			} else if (center && center.length > 0) {
 				range.select(center.get()!, true);
 			}
-		} else if (
-			activeCard?.isEditable &&
-			activeCard.updateBackgroundSelection
-		) {
-			activeCard.updateBackgroundSelection(range);
 		}
+
 		if (!activeCard && !range.collapsed) {
 			const startCard = this.engine.card.find(range.startNode, true);
 			if (startCard && startCard.type === CardType.BLOCK) {
@@ -99,55 +188,36 @@ class OTSelection implements SelectionInterface {
 		const path = range.toPath(true);
 		// 用作历史记录的不包含卡片左右光标位置
 		this.currentRangePath = range.toPath();
-		const pathString = JSON.stringify(path);
-		let data: Array<Attribute | null> = this.getSelections();
-		let isMember = false;
-		let isUpdate = false;
-		data = data.map((attr) => {
-			if (!attr) {
-				isUpdate = true;
-				return null;
-			}
-
-			if (attr.uuid === currentMember.uuid) {
-				isMember = true;
-				if (pathString !== JSON.stringify(attr.path)) {
-					isUpdate = true;
-					attr.path = path;
-					attr.active = true;
-				}
-				return attr;
-			} else {
-				if (members.find((member) => member.uuid === attr.uuid)) {
-					attr.active = false;
-					return attr;
-				} else {
-					isUpdate = true;
-					return null;
-				}
-			}
-		});
-
-		const newData: Array<Attribute> = [];
-		data.forEach((attr) => {
-			if (!!attr) newData.push(attr);
-		});
-
-		if (!isMember) {
-			isUpdate = true;
-			newData.push({
+		const current = this.getAttribute(this.current.uuid);
+		this.setAttribute(
+			Object.assign({}, current, {
 				path,
-				uuid: currentMember.uuid,
-				active: true,
-			});
-		}
-		if (isUpdate) {
-			this.setSelections(newData);
-		}
-		return {
-			data: newData,
-			range,
-		};
+				uuid: this.current.uuid,
+				force,
+			}),
+			this.current,
+			refreshBG,
+			showInfo,
+		);
+		this.rangeColoring.updateBackgroundAlpha(range);
+	}
+
+	refreshAttributes(...members: Member[]) {
+		members.forEach((member) => {
+			const attr = this.getAttribute(member.uuid);
+			if (attr) {
+				this.rangeColoring.render(attr, member);
+			}
+		});
+	}
+
+	destory() {
+		const container = this.engine.container;
+		container.off('mouseup', this.handleMouseUp);
+		container.off('mousemove', this.emitSelectChange);
+		container.off('keyup', this.emitSelectChange);
+		container.off('mousedown', this.handleMouseDown);
+		this.engine.off('scroll', this.handleScroll);
 	}
 }
 

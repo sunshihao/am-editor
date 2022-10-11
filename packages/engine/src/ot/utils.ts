@@ -1,4 +1,4 @@
-import { isEqual } from 'lodash';
+import isEqual from 'lodash/isEqual';
 import { NodeInterface } from '../types/node';
 import { FOCUS, ANCHOR, CURSOR } from '../constants/selection';
 import {
@@ -11,8 +11,6 @@ import {
 import {
 	Op,
 	Path,
-	ObjectInsertOp,
-	ObjectDeleteOp,
 	ListInsertOp,
 	ListDeleteOp,
 	StringInsertOp,
@@ -23,45 +21,49 @@ import {
 	DATA_ID,
 	DATA_TRANSIENT_ATTRIBUTES,
 	DATA_TRANSIENT_ELEMENT,
+	ROOT,
 	UI,
 	UI_SELECTOR,
 } from '../constants/root';
 import { getParentInRoot, toHex, unescapeDots, unescape } from '../utils';
+import { closest, isCard, isEditableCard, isNode } from '../node/utils';
+import $ from '../node/query';
+import { isRoot } from './../node/utils';
 
 export const isTransientElement = (
-	node: NodeInterface,
+	node: NodeInterface | Node,
 	transientElements?: Array<Node>,
 	loadingCards?: NodeInterface[],
 ) => {
-	if (node.isElement()) {
-		const nodeAttributes = node.attributes();
+	const element = (isNode(node) ? node : node[0]) as Element;
+	if (element.nodeType === Node.ELEMENT_NODE) {
+		const dataElement = element.getAttribute(DATA_ELEMENT) || '';
 		//范围标记
-		if (
-			[CURSOR, ANCHOR, FOCUS].indexOf(nodeAttributes[DATA_ELEMENT]) > -1
-		) {
+		if ([CURSOR, ANCHOR, FOCUS].indexOf(dataElement) > -1) {
 			return true;
 		}
 
 		//data-element=ui 属性
 		if (
-			!!nodeAttributes[DATA_TRANSIENT_ELEMENT] ||
-			nodeAttributes[DATA_ELEMENT] === UI
+			!!element.getAttribute(DATA_TRANSIENT_ELEMENT) ||
+			dataElement === UI
 		) {
 			return true;
 		}
-		const parent = node.parent();
-		if (node.isRoot() || parent?.isRoot()) return false;
+		const parent = element.parentElement;
+		const parentDataElement = parent?.getAttribute(DATA_ELEMENT) || '';
+		if (dataElement === ROOT || parentDataElement === ROOT) return false;
 
-		const isCard = node.isCard();
+		const curIsCard = isCard(element);
 		//父级是卡片，并且没有可编辑区域
-		const parentIsLoading = parent?.attributes(CARD_LOADING_KEY);
-		if (parentIsLoading && parent) loadingCards?.push(parent);
-		if (!isCard && parent?.isCard() && !parent.isEditableCard()) {
+		const parentIsLoading = parent?.getAttribute(CARD_LOADING_KEY);
+		if (parentIsLoading && parent) loadingCards?.push($(parent));
+		if (!curIsCard && parent && isCard(parent) && !isEditableCard(parent)) {
 			return true;
 		}
 
 		if (transientElements) {
-			if (isCard) return false;
+			if (curIsCard) return false;
 			const element = transientElements.find(
 				(element) => element === node[0],
 			);
@@ -71,58 +73,66 @@ export const isTransientElement = (
 				return true;
 			}
 		}
-		let closestNode = node.closest(
+		let closestNode = closest(
+			element,
 			`${CARD_SELECTOR},${UI_SELECTOR}`,
 			getParentInRoot,
 		);
-		const attributes = closestNode?.attributes() || {};
-		if (closestNode.length > 0 && attributes[DATA_ELEMENT] === UI) {
+		if (!closestNode || !(closestNode instanceof Element)) return false;
+		if (closestNode.getAttribute(DATA_ELEMENT) === UI) {
 			return true;
 		}
 		//在卡片里面，并且卡片不是可编辑卡片 或者是标记为正在异步渲染时的卡片的子节点
-		if (attributes[CARD_LOADING_KEY]) {
-			loadingCards?.push(closestNode);
+		if (closestNode.getAttribute(CARD_LOADING_KEY)) {
+			loadingCards?.push($(closestNode));
 		}
-		if (
-			!isCard &&
-			closestNode.length > 0 &&
-			closestNode.isCard() &&
-			!closestNode.isEditableCard()
-		) {
+		if (!curIsCard && isCard(closestNode) && !isEditableCard(closestNode)) {
 			return true;
 		}
-		if (closestNode.length === 0) return false;
 
-		if (!isCard || node.isEditableCard()) return false;
+		if (!curIsCard || isEditableCard(element) || !parent) return false;
 		//当前是卡片，父级也是卡片
-		const parentCard = parent?.closest(CARD_SELECTOR, getParentInRoot);
+		const parentCard = closest(
+			parent,
+			CARD_SELECTOR,
+			getParentInRoot,
+		) as Element;
+		if (!parentCard || !(parentCard instanceof Element)) return false;
 		// 如果父级是可编辑卡片，并且在加载中，过滤掉其子节点
-		const loadingCard = parentCard?.attributes(CARD_LOADING_KEY);
+		const loadingCard = parentCard.getAttribute(CARD_LOADING_KEY);
 		if (loadingCard && parentCard) {
-			loadingCards?.push(parentCard);
+			loadingCards?.push($(parentCard));
 		}
-		if (parentCard && parentCard.isCard() && !parentCard.isEditableCard()) {
+		if (parentCard && isCard(parentCard) && !isEditableCard(parentCard)) {
 			return true;
 		}
 	}
 	return false;
 };
 
-export const isTransientAttribute = (node: NodeInterface, attr: string) => {
-	if (node.isRoot() && !/^data-selection-/.test(attr)) return true;
+export const isTransientAttribute = (
+	node: NodeInterface | Node,
+	attr: string,
+) => {
+	const element = (isNode(node) ? node : node[0]) as Element;
+	if (isRoot(element)) return true;
 	if (
-		node.isCard() &&
+		isCard(element) &&
 		['id', 'class', 'style', CARD_LOADING_KEY, CARD_EDITABLE_KEY].includes(
 			attr,
 		)
 	)
 		return true;
-	const transient = node.attributes(DATA_TRANSIENT_ATTRIBUTES);
+	const transient = element.getAttribute(DATA_TRANSIENT_ATTRIBUTES);
 	if (
 		transient === '*' ||
-		transient
-			.split(',')
-			.some((value) => value.trim().toLowerCase() === attr.toLowerCase())
+		(transient &&
+			transient
+				.split(',')
+				.some(
+					(value) =>
+						value.trim().toLowerCase() === attr.toLowerCase(),
+				))
 	)
 		return true;
 	return false;
@@ -136,18 +146,6 @@ export const filterOperations = (ops: Op[]) => {
 		isReverseOp(op, next) ? i++ : data.push(op);
 	}
 	return data;
-};
-
-export const isCursorOp = (op: Op) => {
-	const insertOp = op as ObjectInsertOp;
-	const deleteOp = op as ObjectDeleteOp;
-	return (
-		(insertOp.oi || deleteOp.od) &&
-		op.p &&
-		op.p.length === 2 &&
-		op.p[0] === 1 &&
-		op.p[1].toString().startsWith('data-selection-')
-	);
 };
 
 export const isReverseOp = (op: Op, next: Op) => {
@@ -198,140 +196,6 @@ const isReversePath = (op: Path, next: Path, length: number = 1): boolean => {
 		(nextClone[nextClone.length - 1] as number) - length;
 
 	return isEqual(op.slice(), nextClone);
-};
-
-export const updateIndex = (
-	root: NodeInterface,
-	filter?: (child: NodeInterface) => boolean,
-) => {
-	if (root.isText()) return;
-	let childrens = root.children().toArray();
-	if (!root.isEditable()) {
-		childrens = filter ? childrens.filter(filter) : childrens;
-	}
-	childrens.forEach((child, index) => {
-		child[0]['__index'] = index;
-		if (!child.isText()) updateIndex(child);
-	});
-};
-
-export const opsSort = (ops: Op[]) => {
-	ops.sort((op1, op2) => {
-		/**
-		 *  diff > 0：op1在op2之后 [1,2,3] -> [1,2] | [2,3] -> [1,2]
-		 *  diff < 0：op1在op2之前 [1,2] -> [1,2,3] | [1,2] -> [2,3]
-		 *  diff = 0: op1和op2相同 [1,2] -> [1,2]
-		 */
-		let diff = op1.p.length < op2.p.length ? -1 : 0;
-		/**
-		 * op1.p.length > op2.p.length：op1在op2之后，并且op2的每一项都与op1的固定op2的长度数据每一项相同
-		 */
-		let les = false;
-		if (isCursorOp(op1)) return 1;
-		if (isCursorOp(op2)) return -1;
-		for (let p = 0; p < op1.p.length; p++) {
-			const v1 = op1.p[p];
-			// od oi 最后一个参数是属性名称
-			if (typeof v1 === 'string') break;
-			// op2 中没有这个索引路径，op1 < op2
-			if (p >= op2.p.length) {
-				diff = 1;
-				les = true;
-				break;
-			}
-			const v2 = op2.p[p];
-			if (v1 < v2) {
-				diff = -1;
-				break;
-			} else if (v1 > v2) {
-				diff = 1;
-				break;
-			}
-		}
-		// 文字删除，排再最前面
-		if ('sd' in op1) {
-			// 相同文字删除不处理，按原来顺序操作，textToOps 中已经计算好删除后的位置.2021-12-08
-			if ('sd' in op2) {
-				return 0;
-			}
-			return -1;
-		}
-		if ('sd' in op2) {
-			// 相同文字删除不处理，按原来顺序操作，textToOps 中已经计算好删除后的位置.2021-12-08
-			if ('sd' in op1) {
-				return 0;
-			}
-			return 1;
-		}
-
-		// 删除div，但是修改span属性，span的op放在前面 <div><span>修改属性</span></div>
-		if (les && 'ld' in op2 && 'od' in op1) {
-			return -1;
-		}
-
-		if (les && 'ld' in op1 && 'od' in op2) {
-			return -1;
-		}
-
-		if (diff === 0 && 'od' in op1 && 'ld' in op2) {
-			return -1;
-		}
-
-		if (diff === 0 && 'od' in op2 && 'ld' in op1) {
-			return 1;
-		}
-
-		if ('od' in op1 && 'ld' in op2) {
-			return 1;
-		}
-		if ('od' in op2 && 'ld' in op1) {
-			return -1;
-		}
-		if ('oi' in op1 && diff < 1 && 'li' in op2) {
-			return -1;
-		}
-		if ('oi' in op1 && diff > -1 && 'li' in op2) {
-			return 1;
-		}
-		if ('oi' in op2 && diff > -1 && 'li' in op1) {
-			return 1;
-		}
-		if ('oi' in op2 && diff < 1 && 'li' in op1) {
-			return -1;
-		}
-		if ('od' in op1 && ('li' in op2 || 'ld' in op2)) {
-			return -1;
-		}
-		if ('od' in op2 && ('li' in op1 || 'ld' in op1)) {
-			return 1;
-		}
-		if ('oi' in op1 && ('li' in op2 || 'ld' in op2)) {
-			return 1;
-		}
-		if ('oi' in op2 && ('li' in op1 || 'ld' in op1)) {
-			return -1;
-		}
-		// 如果删除节点比增加的节点索引小，排在加入节点前面
-		if ('ld' in op1 && 'li' in op2) return -1;
-		if ('li' in op1 && 'ld' in op2) return 1;
-		if (diff < 1 && 'ld' in op1 && 'si' in op2) return 1;
-		if (diff > 0 && 'ld' in op1 && 'si' in op2) return -1;
-		if (diff < 1 && 'si' in op1 && 'ld' in op2) return 1;
-		if (diff > 0 && 'si' in op1 && 'ld' in op2) return -1;
-		const isLi =
-			('li' in op1 && 'li' in op2) || ('oi' in op1 && 'oi' in op2);
-		const isLd =
-			('ld' in op1 && 'ld' in op2) || ('od' in op1 && 'od' in op2);
-		// 都是新增节点，越小排越前面
-		if (isLi) {
-			return diff;
-		}
-		// 都是删除节点，越大排越前面
-		else if (isLd) {
-			return -diff;
-		}
-		return 0;
-	});
 };
 
 export const toDOM = (ops: Op[] | Op[][]): Node => {
@@ -392,11 +256,17 @@ export const toDOM = (ops: Op[] | Op[][]): Node => {
 	}
 };
 
-const childToJSON0 = (node: NodeInterface, values: Array<{} | string>) => {
-	const childNodes = node.children();
+const childToJSON0 = (
+	node: NodeInterface | Node,
+	values: Array<{} | string>,
+) => {
+	if (!(node instanceof Node)) {
+		node = node[0];
+	}
+	const childNodes = node.childNodes;
 	if (0 !== childNodes.length) {
 		for (let i = 0; i < childNodes.length; i++) {
-			const child = childNodes.eq(i);
+			const child = childNodes.item(i);
 			if (!child) continue;
 			const data = toJSON0(child);
 			if (data) {
@@ -407,21 +277,23 @@ const childToJSON0 = (node: NodeInterface, values: Array<{} | string>) => {
 };
 
 export const toJSON0 = (
-	node: NodeInterface,
+	node: NodeInterface | Node,
 ): string | undefined | (string | {})[] => {
 	let values: Array<{} | string>;
+	if (!(node instanceof Node)) {
+		node = node[0];
+	}
 	if (!isTransientElement(node)) {
-		const { attributes, nodeValue } = node.get<Element>()!;
-		if (node.type === Node.ELEMENT_NODE) {
-			values = [node.name];
+		const { nodeValue } = node;
+		if (node instanceof Element) {
+			const attributes = node.attributes;
+			values = [node.nodeName.toLowerCase()];
 			const data = {};
 			for (let i = 0; attributes && i < attributes.length; i++) {
 				const { name, specified, value } = attributes[i];
 				if (specified && !isTransientAttribute(node, name)) {
-					if (name === 'style') {
-						data['style'] = toHex(
-							node.get<HTMLElement>()?.style.cssText || value,
-						);
+					if (name === 'style' && node instanceof HTMLElement) {
+						data['style'] = toHex(node.style.cssText || value);
 					} else if ('string' === typeof value) {
 						data[name] = value;
 					}
@@ -430,8 +302,7 @@ export const toJSON0 = (
 			values.push(data);
 			childToJSON0(node, values);
 			return values;
-		}
-		return node.type === Node.TEXT_NODE ? String(nodeValue) : undefined;
+		} else if (node instanceof Text) return String(nodeValue);
 	}
 	return;
 };
@@ -460,4 +331,76 @@ export const getValue = (data: any, path: Path, id?: string) => {
 		}
 	}
 	return hasValue ? value : undefined;
+};
+
+export interface DocData {
+	path: number[];
+	children: any[];
+	name: string;
+	attributes: Record<string, string>;
+}
+
+export const findFromDoc = (
+	data: any,
+	callback: (attributes: Record<string, string>) => boolean,
+): DocData | null => {
+	if (!Array.isArray(data) || data.length < 1) {
+		return null;
+	}
+	for (let i = 1; i < data.length; i++) {
+		if (i === 1) {
+			const attributes = data[i];
+			if (
+				typeof attributes === 'object' &&
+				callback &&
+				callback(attributes)
+			) {
+				return {
+					path: [],
+					name: data[0],
+					attributes,
+					children: data.slice(i + 1),
+				};
+			}
+		} else if (Array.isArray(data[i])) {
+			const result = findFromDoc(data[i], callback);
+			if (result) {
+				result.path.unshift(i);
+				return result;
+			}
+		}
+	}
+	return null;
+};
+
+/**
+ * 从 doc 中查找目标卡片
+ * @param data
+ * @param name
+ * @param callback
+ * @returns 返回卡片属性，以及是否已渲染
+ */
+export const findCardForDoc = (
+	data: any,
+	callback?: (attributes: { [key: string]: string }) => boolean,
+): { attributes: any; rendered: boolean } | void => {
+	const result = findFromDoc(data, (attributes) => {
+		if (attributes['data-card-key']) {
+			if (callback) {
+				return callback(attributes);
+			}
+			return true;
+		}
+		return false;
+	});
+	if (result) {
+		const { attributes, children } = result;
+		return {
+			attributes,
+			rendered:
+				Array.isArray(children) &&
+				Array.isArray(children[2]) &&
+				Array.isArray(children[2][2]),
+		};
+	}
 };

@@ -16,6 +16,8 @@ import {
 	CARD_SELECTOR,
 	CURSOR,
 	DATA_ELEMENT,
+	DATA_ID,
+	EDITABLE,
 	EDITABLE_SELECTOR,
 	FOCUS,
 	READY_CARD_KEY,
@@ -49,8 +51,16 @@ class NodeModel implements NodeModelInterface {
 		node: NodeInterface | Node,
 		schema: SchemaInterface = this.editor.schema,
 	) {
-		if (isNode(node)) node = $(node);
-		return schema.getType(node) === 'mark';
+		return (
+			schema
+				.getTags('marks')
+				.includes(
+					(
+						(node as Node).nodeName?.toLowerCase() ??
+						(node as NodeInterface).name
+					).toLowerCase(),
+				) && schema.getType(node) === 'mark'
+		);
 	}
 
 	/**
@@ -61,8 +71,14 @@ class NodeModel implements NodeModelInterface {
 		node: NodeInterface | Node,
 		schema: SchemaInterface = this.editor.schema,
 	) {
-		if (isNode(node)) node = $(node);
-		return schema.getType(node) === 'inline';
+		return (
+			schema
+				.getTags('inlines')
+				.includes(
+					(node as Node).nodeName?.toLowerCase() ??
+						(node as NodeInterface).name,
+				) && schema.getType(node) === 'inline'
+		);
 	}
 
 	/**
@@ -73,19 +89,31 @@ class NodeModel implements NodeModelInterface {
 		node: NodeInterface | Node,
 		schema: SchemaInterface = this.editor.schema,
 	) {
-		if (isNode(node)) node = $(node);
-		return schema.getType(node) === 'block';
+		return (
+			schema
+				.getTags('blocks')
+				.includes(
+					(
+						(node as Node).nodeName?.toLowerCase() ??
+						(node as NodeInterface).name
+					).toLowerCase(),
+				) && schema.getType(node) === 'block'
+		);
 	}
 
 	/**
 	 * 判断block节点的子节点是否不包含blcok 节点
 	 */
-	isNestedBlock(node: NodeInterface) {
+	isNestedBlock(node: NodeInterface | Node) {
 		if (!this.isBlock(node)) return false;
-		let child = node.first();
+		const element = (
+			!!(node as NodeInterface).length ? node[0] : node
+		) as Element;
+		if (!element) return false;
+		let child = element.firstChild;
 		while (child) {
 			if (this.isBlock(child)) return false;
-			child = child.next();
+			child = child.nextSibling;
 		}
 		return true;
 	}
@@ -114,20 +142,26 @@ class NodeModel implements NodeModelInterface {
 	 * @param withTrim 是否 trim
 	 */
 	isEmpty(node: NodeInterface, withTrim?: boolean) {
-		if (node.isElement()) {
+		if (node.length > 0 && node.isElement()) {
 			// 卡片不为空
+			const attributes = node.attributes();
+			const element = node.fragment ?? node.get<Element>()!;
+			const results = Array.from(
+				element.querySelectorAll(
+					`${CARD_SELECTOR},${READY_CARD_SELECTOR},${EDITABLE_SELECTOR},br`,
+				),
+			);
 			if (
-				node.attributes(CARD_KEY) ||
-				(node.find(CARD_SELECTOR).length > 0 &&
-					node.find(EDITABLE_SELECTOR).length === 0)
-			) {
-				return false;
-			}
-			// 只读卡片不为空
-			if (
-				node.attributes(READY_CARD_KEY) ||
-				(node.find(READY_CARD_SELECTOR).length > 0 &&
-					node.find(EDITABLE_SELECTOR).length === 0)
+				attributes[CARD_KEY] ||
+				attributes[READY_CARD_KEY] ||
+				(results.some(
+					(e) =>
+						e.hasAttribute(CARD_KEY) ||
+						e.hasAttribute(READY_CARD_KEY),
+				) &&
+					!results.some(
+						(e) => e.getAttribute(DATA_ELEMENT) === EDITABLE,
+					))
 			) {
 				return false;
 			}
@@ -136,7 +170,7 @@ class NodeModel implements NodeModelInterface {
 				return false;
 			}
 			// 多个br节点不为空
-			if (node.find('br').length > 1) {
+			if (results.filter((e) => e.localName === 'br').length > 1) {
 				return false;
 			}
 		}
@@ -165,6 +199,8 @@ class NodeModel implements NodeModelInterface {
 	 */
 	isEmptyWidthChild(node: NodeInterface) {
 		if (node.length === 0) return true;
+		if (node.isCard()) return false;
+		if (node.isText()) return this.isEmpty(node);
 		const { childNodes } = node[0];
 		if (childNodes.length === 0) return true;
 		for (let i = 0; i < childNodes.length; i++) {
@@ -256,6 +292,7 @@ class NodeModel implements NodeModelInterface {
 			if (source.name === outer.name) {
 				const attributes = source.attributes();
 				delete attributes.style;
+				delete attributes[DATA_ID];
 				Object.keys(attributes).forEach((key) => {
 					if (!outer.attributes(key))
 						outer.attributes(key, attributes[key]);
@@ -311,6 +348,7 @@ class NodeModel implements NodeModelInterface {
 		target: NodeInterface,
 		remove: boolean = true,
 	) {
+		if (source.equal(target)) return;
 		//要合并的节点是文本，就直接追加
 		if (target.isText()) {
 			source.append(target);
@@ -362,7 +400,7 @@ class NodeModel implements NodeModelInterface {
 				}
 			}
 			// 源节点卡片名称与目标节点卡片一样就删除目标节点的第一个卡片节点
-			if (this.isCustomize(target)) {
+			if (this.isCustomize(target) && !sourceFirst?.equal(target)) {
 				const targetFirst = target.first();
 				if (
 					targetFirst?.isCard() &&
@@ -411,7 +449,7 @@ class NodeModel implements NodeModelInterface {
 				}
 			}
 			// 移除mark插件下面的所有零宽字符
-			else if (markPlugin && child.children().length === 1) {
+			else if (markPlugin && child.get<Node>()?.childNodes.length === 1) {
 				const prev = child.prev();
 				if (!prev || prev.isText()) {
 					child.allChildren().forEach((child) => {
@@ -428,7 +466,12 @@ class NodeModel implements NodeModelInterface {
 			}
 
 			//追加到要合并的列表中
-			if (child.length > 0 && !child.equal(source)) source.append(child);
+			if (
+				child.length > 0 &&
+				!child.equal(source) &&
+				!child.parent()?.equal(source)
+			)
+				source.append(child);
 			child = next;
 		}
 		//移除需要合并的节点
@@ -437,11 +480,7 @@ class NodeModel implements NodeModelInterface {
 		if (toNodeLast && toNodeLast.name === 'br') {
 			let next = toNodeLast.next();
 			while (next) {
-				if (
-					[CURSOR, ANCHOR, FOCUS].indexOf(
-						next.attributes(DATA_ELEMENT),
-					)
-				) {
+				if (next.isCursor()) {
 					toNodeLast.remove();
 					break;
 				}
@@ -487,8 +526,9 @@ class NodeModel implements NodeModelInterface {
 	 * @param range 光标
 	 */
 	insertText(text: string, range?: RangeInterface) {
-		if (!isEngine(this.editor)) return;
-		const { change } = this.editor;
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
+		const { change } = editor;
 		const safeRange = range || change.range.toTrusty();
 
 		const doc = getDocument(safeRange.startContainer);
@@ -563,8 +603,7 @@ class NodeModel implements NodeModelInterface {
 			// 如果当前光标位置的block节点是空节点，就不用分割
 			let { commonAncestorNode } = range;
 			if (commonAncestorNode.isText()) {
-				commonAncestorNode =
-					this.editor.block.closest(commonAncestorNode);
+				commonAncestorNode = editor.block.closest(commonAncestorNode);
 			}
 			let splitNode = null;
 			if (
@@ -592,7 +631,9 @@ class NodeModel implements NodeModelInterface {
 							.shrinkToTextNode().startNode
 					: range.startNode,
 			);
-			if (
+			if (blockNode.isRoot() && !range.startNode.next()) {
+				blockNode.append(node);
+			} else if (
 				!blockNode.isCard() &&
 				schema.isAllowIn(blockNode.name, node.nodeName.toLowerCase())
 			) {
@@ -612,9 +653,29 @@ class NodeModel implements NodeModelInterface {
 					blockNode = parentBlock;
 					parentBlock = blockNode.parent();
 				}
+				const canMergeTags = schema.getCanMergeTags();
+				const name = node.nodeName.toLowerCase();
+				let fragmentLaste: Node | null = null;
+				if (
+					splitNode &&
+					blockNode.name === name &&
+					canMergeTags.includes(blockNode.name)
+				) {
+					blockNode = splitNode;
+					const fragment = document.createDocumentFragment();
+					const children: Node[] = [];
+					const hasNext = blockNode.get<HTMLElement>()?.nextSibling;
+					node.childNodes.forEach((child) => {
+						if (!hasNext) children.unshift(child);
+						else children.push(child);
+					});
+					fragment.append(...children);
+					node = fragment;
+					fragmentLaste = fragment.lastChild;
+				}
 				if (
 					blockNode.isEditable() &&
-					blockNode.children().length === 0
+					blockNode.get<Node>()?.childNodes.length === 0
 				) {
 					blockNode.append(node);
 				} else {
@@ -631,8 +692,11 @@ class NodeModel implements NodeModelInterface {
 						if (splitNode && this.isEmptyWidthChild(splitNode))
 							splitNode.remove();
 					}
+					if (fragmentLaste) node = fragmentLaste;
 				}
 			}
+			if (node instanceof Element || node instanceof DocumentFragment)
+				editor.nodeId.generate(node);
 		} else {
 			const targetNode = block.closest(
 				range.startNode.isEditable()
@@ -706,29 +770,31 @@ class NodeModel implements NodeModelInterface {
 	 */
 	setAttributes(node: NodeInterface, attrs: any) {
 		let style = attrs.style;
-		Object.keys(attrs).forEach((key) => {
-			if (key === 'style') return;
+		for (const key in attrs) {
+			if (key === 'style') continue;
 			if (key === 'className') {
 				const value = attrs[key];
 				if (Array.isArray(value)) {
 					value.forEach((name) => node.addClass(name));
 				} else node.addClass(value);
 			} else node.attributes(key, attrs[key].toString());
-		});
+		}
 		if (typeof style === 'number') style = {};
 		else if (typeof style === 'string') style = getStyleMap(style);
 		style = style || {};
 		const keys = Object.keys(style);
-		keys.forEach((key) => {
+		for (const key in style) {
 			let val = (<{ [k: string]: string | number }>style)[key];
 			if (/^0(px|em)?$/.test(val.toString())) {
 				val = '';
 			}
-
 			node.css(key, val.toString());
-		});
+		}
 
-		if (keys.length === 0 || Object.keys(node.css()).length === 0) {
+		if (
+			keys.length === 0 ||
+			Object.keys(node.attributes('style')).length === 0
+		) {
 			node.removeAttributes('style');
 		}
 
@@ -819,6 +885,55 @@ class NodeModel implements NodeModelInterface {
 			lastNode.remove();
 		}
 	}
+
+	addBrForBlock = (blockNode: NodeInterface) => {
+		if (blockNode.isText()) return;
+		const children = blockNode.get<Element>()!.childNodes;
+		// 非光标标记的字节的数量
+		let notCursorCount = 0;
+		let allText = true;
+		let hasBlock = false;
+		const isP = blockNode.name === 'p';
+		for (const child of children) {
+			if (allText && child.nodeType === Node.TEXT_NODE) {
+				allText = false;
+			} else if (
+				!isP &&
+				!hasBlock &&
+				child.nodeType === Node.ELEMENT_NODE &&
+				this.isBlock(child)
+			) {
+				hasBlock = true;
+			}
+			if (
+				child.nodeType === Node.ELEMENT_NODE &&
+				[ANCHOR, FOCUS, CURSOR].indexOf(
+					(child as Element).getAttribute(DATA_ELEMENT) || '',
+				) < 1
+			) {
+				notCursorCount++;
+			}
+			if (!allText && notCursorCount > 1) {
+				break;
+			}
+		}
+		if (isP && notCursorCount === 0) {
+			const br = document.createElement('br');
+			blockNode.each((children) => {
+				children.appendChild(br.cloneNode());
+			});
+		}
+		if (
+			!hasBlock &&
+			allText &&
+			this.isBlock(blockNode) &&
+			(children.length !== 1 || children[0].nodeName !== 'BR') &&
+			this.isEmptyWithTrim(blockNode)
+		) {
+			blockNode.empty();
+			blockNode.append(document.createElement('br'));
+		}
+	};
 	/**
 	 * 扁平化节点
 	 * @param node 节点
@@ -828,34 +943,17 @@ class NodeModel implements NodeModelInterface {
 		const { block } = this.editor;
 		//第一个子节点
 		let childNode = node.first();
-		const rootElement = root.fragment ? root.fragment : root.get();
 		const tempNode = node.fragment ? $('<p />') : this.clone(node, false);
-		const addBrForBlock = (blockNode: NodeInterface) => {
-			const children = blockNode.children().toArray();
-			if (
-				blockNode.name === 'p' &&
-				children.filter((node) => !node.isCursor()).length === 0
-			) {
-				blockNode.append($('<br />'));
-			}
-			if (
-				this.isBlock(blockNode) &&
-				this.isEmptyWithTrim(blockNode) &&
-				children.every((child) => child.isText())
-			) {
-				blockNode.html('<br />');
-			}
-		};
 		while (childNode) {
 			//获取下一个兄弟节点
 			let nextNode = childNode.next();
 			//如果当前子节点是块级的Card组件，或者是简单的block
 			if (childNode.isBlockCard() || this.isNestedBlock(childNode)) {
-				block.flat(childNode, $(rootElement || []));
+				block.flat(childNode, root);
 			}
 			//如果当前是块级标签，递归循环
 			else if (this.isBlock(childNode)) {
-				childNode = this.flat(childNode, $(rootElement || []));
+				childNode = this.flat(childNode, root);
 			} else {
 				const cloneNode = this.clone(tempNode, false);
 				const isLI = 'li' === cloneNode.name;
@@ -911,10 +1009,10 @@ class NodeModel implements NodeModelInterface {
 					childNode = nextNode;
 				}
 				this.removeSide(cloneNode);
-				block.flat(cloneNode, $(rootElement || []));
-				addBrForBlock(cloneNode);
+				block.flat(cloneNode, root);
+				this.addBrForBlock(cloneNode);
 			}
-			addBrForBlock(childNode);
+			this.addBrForBlock(childNode);
 			this.removeSide(childNode);
 			childNode = nextNode;
 		}

@@ -3,6 +3,7 @@ import {
 	EditorInterface,
 	NodeIdInterface,
 	NodeInterface,
+	SchemaInterface,
 	SchemaRule,
 } from '../types';
 import $ from './query';
@@ -17,10 +18,10 @@ import { getParentInRoot } from '../utils';
 import { isNode, isNodeEntry } from './utils';
 
 class NodeId implements NodeIdInterface {
-	editor: EditorInterface;
+	schema: SchemaInterface;
 	#rules: { [key: string]: SchemaRule[] } = {};
-	constructor(editor: EditorInterface) {
-		this.editor = editor;
+	constructor(editor: SchemaInterface) {
+		this.schema = editor;
 	}
 
 	init() {
@@ -33,8 +34,9 @@ class NodeId implements NodeIdInterface {
 	 */
 	getRules() {
 		const rules: { [key: string]: SchemaRule[] } = {};
-		this.editor.schema.data.blocks.forEach((schema) => {
-			if (!Object.keys(rules).includes(schema.name)) {
+		// const { blocks, inlines, marks } = this.editor.schema.data;
+		this.schema.data.blocks.forEach((schema) => {
+			if (!rules[schema.name]) {
 				rules[schema.name] = [];
 			}
 			rules[schema.name].push(schema);
@@ -59,8 +61,7 @@ class NodeId implements NodeIdInterface {
 	 * @param root 根节点
 	 */
 	generateAll(
-		root: Element | NodeInterface | DocumentFragment = this.editor
-			.container,
+		root: Element | NodeInterface | DocumentFragment,
 		force: boolean = false,
 	) {
 		const rules = this.#rules;
@@ -70,15 +71,21 @@ class NodeId implements NodeIdInterface {
 		}
 		const node = isNode(root) ? root : root.get<Node>();
 		if (!node || node.nodeType === Node.TEXT_NODE) return;
-		const nodes = (isNode(root) ? $(root) : root)?.find(tagNames);
-		nodes.each((_, index) => {
-			const node = nodes.eq(index);
-			if (!node) return;
+		const rootElement = isNode(root) ? root : root.get<HTMLElement>();
+		const nodes = rootElement?.querySelectorAll(tagNames);
+		const generate = (element: Element) => {
 			// 有ID不再生成
-			if (!force && node.attributes(DATA_ID)) return;
+			if (!force && element.getAttribute(DATA_ID)) return;
 
-			this.generate(node, force);
-		});
+			this.generate(element, force);
+		};
+		if (
+			rootElement instanceof Element &&
+			tagNames.includes(rootElement.nodeName.toLowerCase())
+		) {
+			generate(rootElement);
+		}
+		nodes?.forEach(generate);
 	}
 	/**
 	 * 为节点创建一个随机data-id
@@ -96,10 +103,7 @@ class NodeId implements NodeIdInterface {
 			!nodeRules ||
 			nodeRules.length === 0 ||
 			!nodeRules.some((rule) =>
-				this.editor.schema.checkNode(
-					node as NodeInterface,
-					rule.attributes,
-				),
+				this.schema.checkNode(node as NodeInterface, rule.attributes),
 			)
 		) {
 			return;
@@ -144,10 +148,7 @@ class NodeId implements NodeIdInterface {
 			!nodeRules ||
 			nodeRules.length === 0 ||
 			!nodeRules.some((rule) =>
-				this.editor.schema.checkNode(
-					node as NodeInterface,
-					rule.attributes,
-				),
+				this.schema.checkNode(node as NodeInterface, rule.attributes),
 			)
 		) {
 			return false;

@@ -63,13 +63,24 @@ export default class Dropdown implements DropdownInterface {
 		this.dropdown?.removeClass('show');
 	}
 
+	getPlacement() {
+		const dataPlacement =
+			this.root!.closest('.data-toolbar').attributes('data-placement') ||
+			'top';
+		return dataPlacement.startsWith('top') ? 'top' : 'bottom';
+	}
+
 	renderTooltip() {
 		const { title } = this.options;
 		if (title) {
 			this.root!.on('mouseenter', () => {
+				const placement = this.getPlacement();
 				Tooltip.show(
 					this.root!,
 					typeof title === 'function' ? title() : title,
+					{
+						placement,
+					},
 				);
 			});
 			this.root!.on('mouseleave', () => {
@@ -81,8 +92,8 @@ export default class Dropdown implements DropdownInterface {
 		}
 	}
 
-	renderDropdown(container: NodeInterface) {
-		this.dropdown = container.find('.dropdown-container');
+	renderDropdown() {
+		this.dropdown = this.root!.find('.dropdown-container');
 		const { items } = this.options;
 		items.forEach((item) => {
 			switch (item.type) {
@@ -103,7 +114,7 @@ export default class Dropdown implements DropdownInterface {
 		container.append(this.root);
 		this.initToggleEvent();
 		this.renderTooltip();
-		this.renderDropdown(container);
+		this.renderDropdown();
 		const { didMount } = this.options;
 		if (didMount) {
 			didMount(this.root);

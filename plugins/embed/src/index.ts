@@ -8,19 +8,16 @@ import {
 	isEngine,
 	NodeInterface,
 	Plugin,
-	PluginOptions,
 	READY_CARD_KEY,
 	SchemaInterface,
 } from '@aomao/engine';
-import EmbedComponent, {
-	EmbedRenderBeforeEvent,
-	EmbedValue,
-} from './component';
+import EmbedComponent from './component';
 import locales from './locales';
+import { EmbedOptions, EmbedValue } from './types';
 
-export interface EmbedOptions extends PluginOptions {
-	renderBefore?: EmbedRenderBeforeEvent;
-}
+const PARSE_HTML = 'parse:html';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
 
 class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 	static get pluginName() {
@@ -28,10 +25,11 @@ class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 	}
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:schema', (schema) => this.pasteSchema(schema));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
+		editor.on(PASTE_EACH, this.pasteHtml);
 	}
 
 	hotkey() {
@@ -55,7 +53,7 @@ class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 		card.activate(cardComponent.root);
 	}
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add({
 			type: 'block',
 			name: 'div',
@@ -67,18 +65,19 @@ class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 				'data-value': '*',
 			},
 		});
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.isElement()) {
 			const attributes = node.attributes();
 			const type = attributes['data-type'];
-			if (type === EmbedComponent.cardName) {
+			if (type && type === EmbedComponent.cardName) {
 				const value = attributes['data-value'];
 				const cardValue = decodeCardValue(value);
 				if (!cardValue.url) return;
-				this.editor.card.replaceNode(
+				editor.card.replaceNode(
 					node,
 					EmbedComponent.cardName,
 					cardValue,
@@ -88,12 +87,13 @@ class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 			}
 		}
 		return true;
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: EmbedValue) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
 		root.find(
 			`[${CARD_KEY}="${EmbedComponent.cardName}"],[${READY_CARD_KEY}="${EmbedComponent.cardName}"]`,
 		).each((cardNode) => {
@@ -130,8 +130,17 @@ class Embed<T extends EmbedOptions = EmbedOptions> extends Plugin<T> {
 					contianer = callback(contianer, value);
 				}
 				node.replaceWith(contianer);
+				results.push(contianer);
 			} else node.remove();
 		});
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
+		editor.off(PASTE_EACH, this.pasteHtml);
 	}
 }
 

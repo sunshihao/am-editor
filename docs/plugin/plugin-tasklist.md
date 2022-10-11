@@ -19,12 +19,12 @@ new Engine(...,{ plugins:[Tasklist], cards:[CheckboxComponent] })
 
 ## Optional
 
-### hot key
+### Hotkey
 
 Default shortcut key `mod+shift+9`
 
 ```ts
-//hot key
+//hotkey
 hotkey?: string | Array<string>;//default mod+shift+9
 //Use configuration
 new Engine(...,{
@@ -37,32 +37,13 @@ new Engine(...,{
  })
 ```
 
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-Tasklist plugin markdown syntax is `[]`, `[ ]`, `[x]`
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        "tasklist":{
-            //Close markdown
-            markdown:false
-        }
-    }
- })
-```
-
 ## Command
 
 You can pass in {checked:true} to indicate checked, optional parameters
 
 ```ts
-//Use command to execute the plug-in and pass in the required parameters
+//Use command to execute the plugin and pass in the required parameters
 engine.command.execute('tasklist', { checked: boolean });
-//Use command to execute query current status, return false or current list plug-in name tasklist tasklist unorderedlist
+//Use command to execute query current status, return false or current list plugin name tasklist tasklist unorderedlist
 engine.command.queryState('tasklist');
 ```

@@ -96,6 +96,11 @@ export interface MarkModelInterface {
 	 */
 	merge(range?: RangeInterface): void;
 	/**
+	 * 合并mark样式
+	 * @param marks
+	 */
+	mergeMarks(marks: Array<NodeInterface>): void;
+	/**
 	 * 光标处插入mark标签
 	 * @param mark mark标签
 	 * @param range 指定光标，默认为编辑器选中的光标
@@ -126,10 +131,6 @@ export interface MarkInterface<T extends PluginOptions = PluginOptions>
 	 * 标签名称
 	 */
 	readonly tagName: string;
-	/**
-	 * Markdown 规则，可选
-	 */
-	readonly markdown?: string;
 	/**
 	 * 回车后是否复制mark效果，默认为 true，允许
 	 * <p><strong>abc<cursor /></strong></p>
@@ -174,26 +175,4 @@ export interface MarkInterface<T extends PluginOptions = PluginOptions>
 	 * @param args 在调用 command.execute 执行插件传入时的参数
 	 */
 	isTrigger?(...args: any): boolean;
-	/**
-	 * 解析markdown
-	 * @param event 事件
-	 * @param text markdown文本
-	 * @param node 触发节点
-	 */
-	triggerMarkdown(
-		event: KeyboardEvent,
-		text: string,
-		node: NodeInterface,
-	): boolean | void;
-	/**
-	 * 检测当前粘贴节点是否符合markdown解析规则
-	 */
-	checkMarkdown(
-		node: NodeInterface,
-	): { reg: RegExp; match: RegExpExecArray | null } | undefined;
-	/**
-	 * 解析粘贴markdown
-	 * @param node 节点
-	 */
-	pasteMarkdown(node: NodeInterface): boolean | void;
 }

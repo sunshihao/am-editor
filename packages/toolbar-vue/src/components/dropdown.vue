@@ -28,7 +28,7 @@
                 </template>
             </am-button>
         </div>
-        <am-dropdown-list 
+        <am-dropdown-list
         v-if="visible"
         :hasDot="hasDot"
         :engine="engine"
@@ -74,30 +74,30 @@ export default defineComponent({
 		 props.items.length > 0
 			?  props.items.find(item => item.isDefault === true) ||  props.items[0]
 			: null;
-            
+
             if(item){
                 if(cxt.slots.default){
                     buttonContent.value =  item
                 }
                 else if(typeof props.content === "function") {
-                    buttonContent.value = {icon:props.icon,content:props.content()}
+                    buttonContent.value = {icon:props.icon,content:props.content(props.engine)}
                 }
                 else if(Array.isArray(values) && values.length > 1){
                     buttonContent.value = {icon:props.icon,content: props.content}
                 }else{
-                    buttonContent.value = {icon:item.icon,content:typeof item.content === "function" ? item.content() : item.content}
+                    buttonContent.value = {icon:item.icon,content:typeof item.content === "function" ? item.content(props.engine) : item.content}
                 }
             }else if(props.icon || props.content){
                 if(!Array.isArray(values) || values.length < 1){
-                    buttonContent.value = {icon:props.icon,content:typeof props.content === "function" ? props.content() : props.content}
+                    buttonContent.value = {icon:props.icon,content:typeof props.content === "function" ? props.content(props.engine) : props.content}
                 }
             }else if(defaultItem){
-                buttonContent.value = {icon:defaultItem.icon,content:typeof defaultItem.content === "function" ? defaultItem.content() : defaultItem.content}
+                buttonContent.value = {icon:defaultItem.icon,content:typeof defaultItem.content === "function" ? defaultItem.content(props.engine) : defaultItem.content}
             }
             valuesVar.value = values ||
-						(props.icon || props.content ? '' : defaultItem?.key || '')
+						(props.icon || props.content ? '' : defaultItem ? defaultItem.key : '')
         }
-        
+
         const triggerMouseDown = (event: MouseEvent) => {
             event.preventDefault();
         }
@@ -116,13 +116,13 @@ export default defineComponent({
             visible.value = true
         }
         const hide = (event?: MouseEvent) => {
-            if(event && targetRef.value?.element && targetRef.value.element.contains(event.target as Node)) return;
+            if(event && targetRef.value && targetRef.value.element && targetRef.value.element.contains(event.target as Node)) return;
             visible.value = false
         }
 
 	    const triggerSelect = (event: MouseEvent, key: string) => {
             hide()
-		    if (props.onSelect) props.onSelect(event, key);
+		    if (props.onSelect) props.onSelect(event, key, props.engine);
 	    }
         update(props.values)
         watch(() => ({...props}), (newProps) => update(newProps.values))
@@ -155,6 +155,10 @@ export default defineComponent({
     display: flex;
     align-items: stretch;
     height: 100%;
+}
+
+.toolbar-dropdown .toolbar-dropdown-trigger .toolbar-button {
+    margin: 0;
 }
 
 .toolbar-dropdown .toolbar-dropdown-trigger .toolbar-dropdown-button-text {
@@ -197,12 +201,16 @@ export default defineComponent({
     left: 0px;
 }
 
-.editor-toolbar-mobile .toolbar-dropdown .toolbar-dropdown-list,.editor-toolbar-popup .toolbar-dropdown .toolbar-dropdown-list{
+.editor-toolbar-mobile .toolbar-dropdown .toolbar-dropdown-list, .editor-toolbar-popup .toolbar-dropdown .toolbar-dropdown-list:not(.toolbar-dropdown-placement-bottom) {
     bottom: 32px;
     top: auto;
-    max-height: calc(30vh);
     overflow: auto;
 }
+
+.editor-toolbar-mobile .toolbar-dropdown .toolbar-dropdown-list {
+    max-height: calc(30vh);
+}
+
 
 .editor-toolbar-mobile .toolbar-dropdown.toolbar-dropdown-right .toolbar-dropdown-list,.editor-toolbar-popup .toolbar-dropdown.toolbar-dropdown-right .toolbar-dropdown-list{
     right: 0px;

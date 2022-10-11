@@ -18,9 +18,9 @@ abstract class ListEntry<T extends PluginOptions = PluginOptions>
 		super.init();
 		const editor = this.editor;
 		if (isEngine(editor)) {
-			editor.on('paste:before', (fragment) => this.pasteBefore(fragment));
-			editor.on('paste:insert', () => this.pasteInsert());
-			editor.on('paste:after', () => this.pasteAfter());
+			editor.on('paste:before', this.pasteBefore);
+			editor.on('paste:insert', this.pasteInsert);
+			editor.on('paste:after', this.pasteAfter);
 		}
 	}
 
@@ -39,9 +39,10 @@ abstract class ListEntry<T extends PluginOptions = PluginOptions>
 	 */
 	abstract isCurrent(node: NodeInterface): boolean;
 
-	pasteBefore(documentFragment: DocumentFragment) {
-		if (!this.cardName || !this.editor) return;
-		const { list } = this.editor;
+	pasteBefore = (documentFragment: DocumentFragment) => {
+		const editor = this.editor;
+		if (!this.cardName || !editor) return;
+		const { list } = editor;
 		const node = $(documentFragment);
 		const children = node.allChildren();
 		children.forEach((domChild) => {
@@ -60,11 +61,12 @@ abstract class ListEntry<T extends PluginOptions = PluginOptions>
 			}
 		});
 		this.isPasteList = children.some((child) => child.name === 'li');
-	}
+	};
 
-	pasteInsert() {
-		if (!this.cardName || !isEngine(this.editor)) return;
-		const { change, list } = this.editor;
+	pasteInsert = () => {
+		const editor = this.editor;
+		if (!this.cardName || !isEngine(editor)) return;
+		const { change, list } = editor;
 		const range = change.range.get();
 		const rootBlock = range.getRootBlock();
 		const nextBlock = rootBlock?.next();
@@ -81,11 +83,20 @@ abstract class ListEntry<T extends PluginOptions = PluginOptions>
 					list.addReadyCardToCustomize(domNode, this.cardName!);
 			});
 		}
-	}
+	};
 
-	pasteAfter() {
+	pasteAfter = () => {
 		if (this.isPasteList) {
 			this.editor?.list.merge();
+		}
+	};
+
+	destroy() {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off('paste:before', this.pasteBefore);
+			editor.off('paste:insert', this.pasteInsert);
+			editor.off('paste:after', this.pasteAfter);
 		}
 	}
 }

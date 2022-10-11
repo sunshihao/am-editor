@@ -152,14 +152,20 @@ class Selection implements SelectionInterface {
 		if (this.key) {
 			const { commonAncestorNode } = this.range;
 			const root = commonAncestorNode.closest(ROOT_SELECTOR);
-			if (!this.focus.inEditor()) {
+			if (
+				!this.focus.inEditor() ||
+				!this.focus.get<Element>()?.isConnected
+			) {
 				this.focus = root.find(
 					`[data-${this.focus.attributes(DATA_ELEMENT)}-id="${
 						this.key
 					}"]`,
 				);
 			}
-			if (!this.anchor.inEditor()) {
+			if (
+				!this.anchor.inEditor() ||
+				!this.anchor.get<Element>()?.isConnected
+			) {
 				this.anchor = root.find(
 					`[data-${this.anchor.attributes(DATA_ELEMENT)}-id="${
 						this.key
@@ -168,6 +174,17 @@ class Selection implements SelectionInterface {
 			}
 		}
 		const { node } = this.editor;
+
+		if (!this.anchor.get()?.isConnected) {
+			this.anchor = this.range.commonAncestorNode.find(
+				`[${DATA_ELEMENT}="anchor"]`,
+			);
+		}
+		if (!this.focus.get()?.isConnected) {
+			this.focus = this.range.commonAncestorNode.find(
+				`[${DATA_ELEMENT}="focus"]`,
+			);
+		}
 		if (this.anchor.equal(this.focus)) {
 			const cursor = this.anchor;
 			const _parent = cursor.parent();
@@ -207,7 +224,10 @@ class Selection implements SelectionInterface {
 				cursor.remove();
 				_parent![0].normalize();
 			}
-			if (_parent.name === 'p' && _parent.children().length === 0) {
+			if (
+				_parent.name === 'p' &&
+				_parent.get<Node>()?.childNodes.length === 0
+			) {
 				_parent.append($('<br />'));
 			}
 			return;
@@ -217,7 +237,7 @@ class Selection implements SelectionInterface {
 		let parent = this.anchor.parent();
 		if (parent) {
 			node.removeZeroWidthSpace(parent);
-			this.range.setStartBefore(this.anchor);
+			if (this.anchor.length > 0) this.range.setStartBefore(this.anchor);
 			this.anchor.remove();
 			parent[0].normalize();
 		}
@@ -226,10 +246,13 @@ class Selection implements SelectionInterface {
 		parent = this.focus.parent();
 		if (parent) {
 			node.removeZeroWidthSpace(parent);
-			this.range.setEndBefore(this.focus);
+			if (this.focus.length > 0) this.range.setEndBefore(this.focus);
 			this.focus.remove();
 			parent[0].normalize();
-			if (parent.name === 'p' && parent.children().length === 0) {
+			if (
+				parent.name === 'p' &&
+				parent.get<Node>()?.childNodes.length === 0
+			) {
 				parent.append($('<br />'));
 			}
 			if (isSafari) {
@@ -283,7 +306,7 @@ class Selection implements SelectionInterface {
 					focus.remove();
 					if (
 						parent?.name === 'p' &&
-						parent.children().length === 0
+						parent.get<Node>()?.childNodes.length === 0
 					) {
 						parent.append($('<br />'));
 					}
@@ -333,7 +356,7 @@ class Selection implements SelectionInterface {
 					anchor.remove();
 					if (
 						parent?.name === 'p' &&
-						parent.children().length === 0
+						parent.get<Node>()?.childNodes.length === 0
 					) {
 						parent.append($('<br />'));
 					}

@@ -4,18 +4,18 @@
             <div v-if="!!title" class="toolbar-tooltip-title">{{title}}</div>
             <div v-if="!!hotkeyText" class="toolbar-tooltip-hotkey" v-html="hotkeyText"></div>
         </template>
-        <button 
-        :class="['toolbar-button',className,{'toolbar-button-active': active,'toolbar-button-disabled':disabled}]" 
+        <button
+        :class="['toolbar-button',className,{'toolbar-button-active': active,'toolbar-button-disabled':disabled}]"
         ref="element"
-        @click="triggerClick" 
-        @mousedown="triggerMouseDown" 
-        @mouseenter="triggerMouseEnter" 
+        @click="triggerClick"
+        @mousedown="triggerMouseDown"
+        @mouseenter="triggerMouseEnter"
         @mouseleave="triggerMouseLeave">
             <slot name="icon">
                 <span v-if="iconIsHtml" v-html="icon"></span>
                 <span v-if="!iconIsHtml && icon" :class="`data-icon data-icon-${icon}`" />
             </slot>
-            <slot>{{typeof content === 'function' ? content() : content}}</slot>
+            <slot>{{typeof content === 'function' ? content(engine) : content}}</slot>
         </button>
     </a-tooltip>
 </template>
@@ -50,7 +50,7 @@ export default defineComponent({
         const visible = ref(false)
 
         return {
-            iconIsHtml:/^<.*>/.test(props.icon?.trim() || ""),
+            iconIsHtml:/^<.*>/.test((props.icon || "").trim()),
             isMobile,
             visible,
             hotkeyText:hotkey,
@@ -66,15 +66,15 @@ export default defineComponent({
         triggerMouseDown(event:MouseEvent){
             event.preventDefault();
             if (this.disabled) return;
-            if (this.onMouseDown) this.onMouseDown(event);
+            if (this.onMouseDown) this.onMouseDown(event, this.engine);
             this.visible = false
         },
         triggerMouseEnter(event:MouseEvent){
-            if(this.onMouseEnter) this.onMouseEnter(event)
+            if(this.onMouseEnter) this.onMouseEnter(event, this.engine)
             this.visible = true
         },
         triggerMouseLeave(event:MouseEvent){
-            if(this.onMouseLevel) this.onMouseLevel(event)
+            if(this.onMouseLevel) this.onMouseLevel(event, this.engine)
             this.visible = false
         },
         triggerClick(event: MouseEvent){
@@ -82,7 +82,7 @@ export default defineComponent({
             if (nodeName !== 'INPUT' && nodeName !== 'TEXTAREA')
                 event.preventDefault();
             if (this.disabled) return;
-            if (this.onClick && this.onClick(event) === false) return;
+            if (this.onClick && this.onClick(event, this.engine) === false) return;
             if (this.autoExecute !== false) {
                 let commandName = this.name;
                 let commandArgs = [];
@@ -94,7 +94,8 @@ export default defineComponent({
                         commandArgs = this.command;
                     }
                 }
-                this.engine?.command.execute(commandName, ...commandArgs);
+				if(this.engine)
+                this.engine.command.execute(commandName, ...commandArgs);
             }
         }
     }
@@ -106,7 +107,7 @@ export default defineComponent({
     align-items: center;
     justify-content: center;
     width: auto;
-    min-width: 32px;
+    min-width: 26px;
     margin: 0;
     text-align: center;
     padding: 0 7px;
@@ -127,6 +128,7 @@ export default defineComponent({
 
 .editor-toolbar:not(.editor-toolbar-mobile) .toolbar-button {
     padding: 0 4px;
+    margin: 0 1px;
 }
 
 .editor-toolbar:not(.editor-toolbar-mobile) .toolbar-button:hover {

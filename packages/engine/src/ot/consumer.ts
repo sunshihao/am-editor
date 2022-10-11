@@ -11,7 +11,7 @@ import {
 } from '../types/ot';
 import { NodeInterface } from '../types/node';
 import { getDocument } from '../utils';
-import { isCursorOp, isTransientElement, updateIndex, toDOM } from './utils';
+import { isTransientElement, toDOM } from './utils';
 import { $ } from '../node';
 import { CARD_LOADING_KEY, DATA_ID, EDITABLE_SELECTOR } from '../constants';
 import { RangePath } from '../types';
@@ -43,10 +43,7 @@ class Consumer implements ConsumerInterface {
 			};
 		const offset = index - JSON0_INDEX.ELEMENT;
 		// 正在加载中的节点，直接渲染
-		if (
-			node.nodeType === Node.ELEMENT_NODE &&
-			(node as HTMLElement).hasAttribute(CARD_LOADING_KEY)
-		) {
+		if (node instanceof Element && node.hasAttribute(CARD_LOADING_KEY)) {
 			const { card } = this.engine;
 			const cardComponent = card.find(node);
 			if (cardComponent) {
@@ -54,16 +51,19 @@ class Consumer implements ConsumerInterface {
 				card.renderComponent(cardComponent);
 			}
 		}
-		const childNode = Array.from(node.childNodes).filter((node) => {
-			const childNode = $(node);
-			return !isTransientElement(childNode);
-		})[offset];
+		const childNodes: Node[] = [];
+		node.childNodes.forEach((child) => {
+			if (!isTransientElement(child)) {
+				childNodes.push(child);
+			}
+		});
+		const childNode = childNodes[offset];
 		const pathOffset = path[1];
 		if (
 			1 === path.length ||
 			pathOffset === JSON0_INDEX.TAG_NAME ||
 			pathOffset === JSON0_INDEX.ATTRIBUTE ||
-			(childNode && childNode.nodeType === Node.TEXT_NODE)
+			childNode instanceof Text
 		) {
 			return {
 				startNode: childNode,
@@ -78,9 +78,10 @@ class Consumer implements ConsumerInterface {
 	fromRemoteAttr(attr: RemoteAttr) {
 		if (!attr) return;
 		const { id, leftText, rightText } = attr;
-		const idNode = $(`[${DATA_ID}="${id}"]`);
-		if (idNode.length === 0) return;
-		const node = idNode.get()!;
+		const node = this.engine.container
+			.get<Element>()
+			?.querySelector(`[${DATA_ID}="${id}"]`);
+		if (!node) return;
 		const text = node.textContent || '';
 		if (text === '')
 			return {
@@ -179,10 +180,7 @@ class Consumer implements ConsumerInterface {
 		const { card } = this.engine;
 		const { startNode } = this.getElementFromPath(root, path);
 		const domNode = $(startNode);
-		if (
-			(domNode && domNode.length > 0 && !domNode.isRoot()) ||
-			/^data-selection-/.test(attr)
-		) {
+		if (domNode && domNode.length > 0 && !domNode.isRoot()) {
 			attr = unescapeDots(attr);
 			value = unescape(value);
 			domNode.get<Element>()?.setAttribute(attr, value);
@@ -200,10 +198,7 @@ class Consumer implements ConsumerInterface {
 	removeAttribute(root: NodeInterface, path: Path, attr: string) {
 		const { startNode } = this.getElementFromPath(root, path);
 		const domNode = $(startNode);
-		if (
-			(domNode.length > 0 && !domNode.isRoot()) ||
-			/^data-selection-/.test(attr)
-		) {
+		if (domNode.length > 0 && !domNode.isRoot()) {
 			domNode.get<Element>()?.removeAttribute(attr);
 		}
 		return domNode;
@@ -219,7 +214,14 @@ class Consumer implements ConsumerInterface {
 		const { startNode, endNode } = this.getElementFromPath(root, path);
 		const domBegine = $(startNode);
 		const domEnd = $(endNode);
-		if (domEnd.length > 0 && !domBegine.isRoot() && !root.isCard()) {
+		if (
+			domEnd.length > 0 &&
+			!domBegine.isRoot() &&
+			(!root.isCard() ||
+				(root.isEditableCard() &&
+					(domBegine.length === 0 ||
+						domBegine.closest(EDITABLE_SELECTOR).isEditable())))
+		) {
 			const element =
 				typeof value === 'string'
 					? document.createTextNode(value)
@@ -297,7 +299,7 @@ class Consumer implements ConsumerInterface {
 				const target = this.engine.container.find(
 					`[${DATA_ID}="${op.id}"]`,
 				);
-				if (target.inEditor()) {
+				if (target.length > 0 && target.inEditor()) {
 					root = target;
 					path = path.slice(op.bi);
 				}
@@ -336,12 +338,11 @@ class Consumer implements ConsumerInterface {
 				const applyNode = this.handleOperation(op, true);
 				if (applyNode) applyNodes.push(applyNode);
 			});
-			if (path) this.setRangeByRemotePath(path);
-			if (ops.some((op) => !isCursorOp(op)))
-				this.engine.change.change(true, applyNodes);
+			if (path && this.engine.isFocus()) this.setRangeByRemotePath(path);
+			this.engine.change.change(true, applyNodes);
 			return applyNodes;
-		} catch (error) {
-			console.log(error);
+		} catch (error: any) {
+			this.engine.messageError('ot', error);
 			return [];
 		}
 	}
@@ -352,42 +353,8 @@ class Consumer implements ConsumerInterface {
 			const applyNode = this.handleOperation(op);
 			if (applyNode) applyNodes.push(applyNode);
 		});
-		if (ops.some((op) => !isCursorOp(op)))
-			this.engine.change.change(false, applyNodes);
+		this.engine.change.change(false, applyNodes);
 		return applyNodes;
-	}
-
-	handleIndex(ops: Op[], applyNodes: NodeInterface[]) {
-		if (!ops.every((op) => isCursorOp(op))) {
-			const targetElements: Node[] = [];
-			applyNodes.forEach((node) => {
-				let target = node.isRoot() ? node : node.parent() || node;
-				if (target.isEditable() && !target.isRoot()) {
-					target =
-						this.engine.card.find(target, true)?.root || target;
-				}
-				if (
-					target &&
-					target.length > 0 &&
-					!targetElements.includes(target[0]) &&
-					!targetElements.find((element) =>
-						element.contains(target[0]),
-					)
-				) {
-					let index = -1;
-					while (
-						(index = targetElements.findIndex((element) =>
-							target[0].contains(element),
-						)) &&
-						index > -1
-					) {
-						targetElements.splice(index, 1);
-					}
-					targetElements.push(target[0]);
-				}
-			});
-			targetElements.forEach((element) => updateIndex($(element)));
-		}
 	}
 
 	setRangeAfterOp(op: TargetOp) {
@@ -440,8 +407,8 @@ class Consumer implements ConsumerInterface {
 				start: this.getSideText(startNode, startOffset),
 				end: this.getSideText(endNode, endOffset),
 			};
-		} catch (error) {
-			console.log(error);
+		} catch (error: any) {
+			this.engine.messageError('ot', error);
 			return;
 		}
 	}
@@ -467,8 +434,8 @@ class Consumer implements ConsumerInterface {
 				range.setEnd(endInfo.container, endInfo.offset);
 			}
 			this.engine.change.range.select(range, false);
-		} catch (error) {
-			console.error(error);
+		} catch (error: any) {
+			this.engine.messageError('ot', error);
 		}
 	}
 
@@ -483,14 +450,20 @@ class Consumer implements ConsumerInterface {
 				startClone.pop();
 				endClone.pop();
 				const { container, change } = this.engine;
-				const startChild = container.getChildByPath(
-					startClone,
-					(child) => !isTransientElement($(child)),
-				);
-				const endChild = container.getChildByPath(
-					endClone,
-					(child) => !isTransientElement($(child)),
-				);
+				const startChild = start.id
+					? container.find(`[${DATA_ID}="${start.id}"]`).get<Node>()
+					: container.getChildByPath(
+							startClone,
+							(child) => !isTransientElement($(child)),
+					  );
+				if (!startChild) return;
+				const endChild = end.id
+					? container.find(`[${DATA_ID}="${end.id}"]`).get<Node>()
+					: container.getChildByPath(
+							endClone,
+							(child) => !isTransientElement($(child)),
+					  );
+				if (!endChild) return;
 				const getMaxOffset = (node: Node, offset: number) => {
 					if (node.nodeType === getDocument().TEXT_NODE) {
 						const text = node.textContent || '';
@@ -555,8 +528,8 @@ class Consumer implements ConsumerInterface {
 
 					change.range.select(range);
 					range.scrollRangeIntoView();
-				} catch (error) {
-					console.error(error);
+				} catch (error: any) {
+					this.engine.messageError('ot', error);
 				}
 			}
 		}

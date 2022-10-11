@@ -8,12 +8,14 @@ export type LinkPreviewProps = {
 	language: LanguageInterface;
 	href?: string;
 	className?: string;
+	readonly: boolean;
 	onEdit: (event: React.MouseEvent) => void;
 	onRemove: (event: React.MouseEvent) => void;
 };
 
 const LinkPreview: React.FC<LinkPreviewProps> = ({
 	language,
+	readonly,
 	href,
 	onEdit,
 	onRemove,
@@ -25,7 +27,7 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
 		return isMobile ? (
 			editButton
 		) : (
-			<Tooltip title={language.get('link', 'link_edit')}>
+			<Tooltip title={language.get('link', 'link_edit').toString()}>
 				{editButton}
 			</Tooltip>
 		);
@@ -37,14 +39,14 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
 		return isMobile ? (
 			removeButton
 		) : (
-			<Tooltip title={language.get('link', 'link_remove')}>
+			<Tooltip title={language.get('link', 'link_remove').toString()}>
 				{removeButton}
 			</Tooltip>
 		);
 	};
 	return (
 		<div className={classnames('data-link-preview')} data-element="ui">
-			<Tooltip title={language.get('link', 'link_open')}>
+			<Tooltip title={language.get('link', 'link_open').toString()}>
 				<a
 					className="data-icon data-icon-link data-link-preview-open"
 					href={href}
@@ -53,10 +55,12 @@ const LinkPreview: React.FC<LinkPreviewProps> = ({
 					{href}
 				</a>
 			</Tooltip>
-			<div className="data-link-op">
-				{renderEdit()}
-				{renderRemove()}
-			</div>
+			{!readonly && (
+				<div className="data-link-op">
+					{renderEdit()}
+					{renderRemove()}
+				</div>
+			)}
 		</div>
 	);
 };

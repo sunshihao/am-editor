@@ -10,6 +10,7 @@ import {
 	Resizer,
 	CardType,
 } from '@aomao/engine';
+import PhotoSwipe from 'photoswipe';
 import { ImageValue } from '..';
 import Pswp from '../pswp';
 import './index.css';
@@ -77,17 +78,23 @@ export type Options = {
 	 * @param src 图片地址
 	 * @returns 图片地址
 	 */
-	onBeforeRender?: (status: 'uploading' | 'done', src: string) => string;
+	onBeforeRender?: (
+		status: 'uploading' | 'done',
+		src: string,
+		editor: EditorInterface,
+	) => string;
 	onChange?: (size?: Size, loaded?: boolean) => void;
 	onError?: () => void;
+	onLoad?: () => void;
 	enableResizer?: boolean;
+	maxHeight?: number | undefined;
 };
 
 export const winPixelRatio = window.devicePixelRatio;
 let pswp: PswpInterface | undefined = undefined;
 class Image {
 	private editor: EditorInterface;
-	private options: Options;
+	options: Options;
 	root: NodeInterface;
 	private progress: NodeInterface;
 	private image: NodeInterface;
@@ -95,12 +102,13 @@ class Image {
 	private meta: NodeInterface;
 	private maximize: NodeInterface;
 	private bg: NodeInterface;
-	private resizer?: Resizer;
+	resizer?: Resizer;
 	private pswp: PswpInterface;
 	src: string;
 	status: Status;
 	size: Size;
 	maxWidth: number;
+	maxHeight: number | undefined;
 	rate: number = 1;
 	isLoad: boolean = false;
 	message: string | undefined;
@@ -115,6 +123,7 @@ class Image {
 			naturalHeight: 0,
 			naturalWidth: 0,
 		};
+		this.maxHeight = this.options.maxHeight;
 		this.status = this.options.status;
 		this.root = $(this.renderTemplate());
 		this.progress = this.root.find('.data-image-progress');
@@ -124,7 +133,7 @@ class Image {
 		this.maximize = this.root.find('.data-image-maximize');
 		this.bg = this.root.find('.data-image-bg');
 		this.maxWidth = this.getMaxWidth();
-		this.pswp = pswp || new Pswp(this.editor);
+		this.pswp = pswp || new Pswp(editor);
 		this.message = this.options.message;
 		pswp = this.pswp;
 	}
@@ -140,7 +149,7 @@ class Image {
 			}<span class="data-icon data-icon-copy"></span></span>`;
 		}
 		const src = onBeforeRender
-			? onBeforeRender(this.status, this.options.src)
+			? onBeforeRender(this.status, this.options.src, this.editor)
 			: this.options.src;
 		const progress = `<span class="data-image-progress">
                             <i class="data-anticon">
@@ -184,13 +193,12 @@ class Image {
 	}
 
 	bindErrorEvent(node: NodeInterface) {
+		const editor = this.editor;
 		const copyNode = node.find('.data-icon-copy');
 		copyNode.on('mouseenter', () => {
 			Tooltip.show(
 				copyNode,
-				this.editor.language
-					.get('image', 'errorMessageCopy')
-					.toString(),
+				editor.language.get('image', 'errorMessageCopy').toString(),
 			);
 		});
 		copyNode.on('mouseleave', () => {
@@ -200,9 +208,12 @@ class Image {
 			event.stopPropagation();
 			event.preventDefault();
 			Tooltip.hide();
-			this.editor.clipboard.copy(this.options.message || 'Error message');
-			this.editor.messageSuccess(
-				this.editor.language.get('copy', 'success').toString(),
+			editor.clipboard.copy(
+				this.message || this.options.message || 'Error message',
+			);
+			editor.messageSuccess(
+				'copy',
+				editor.language.get('copy', 'success').toString(),
 			);
 		});
 	}
@@ -212,7 +223,8 @@ class Image {
 	}
 
 	imageLoadCallback() {
-		const root = this.editor.card.closest(this.root);
+		const editor = this.editor;
+		const root = editor.card.closest(this.root);
 		if (!root || this.status === 'uploading') {
 			return;
 		}
@@ -237,21 +249,24 @@ class Image {
 		this.resetSize();
 
 		this.image.css('visibility', 'visible');
-		this.detail.css('width', '');
 		this.detail.css('height', '');
+		this.detail.css('width', '');
 		const { onChange } = this.options;
-		if (isEngine(this.editor) && onChange) {
+		if (isEngine(editor) && onChange) {
 			onChange(this.size, true);
 		}
 		window.removeEventListener('resize', this.onWindowResize);
 		window.addEventListener('resize', this.onWindowResize);
-		this.editor.off('editor:resize', this.onWindowResize);
-		this.editor.on('editor:resize', this.onWindowResize);
+		editor.off('editor:resize', this.onWindowResize);
+		editor.on('editor:resize', this.onWindowResize);
 		// 重新调整拖动层尺寸
 		if (this.resizer) {
 			this.resizer.setSize(img.clientWidth, img.clientHeight);
 		}
 		this.isLoad = true;
+		if (this.options.onLoad) {
+			this.options.onLoad();
+		}
 	}
 
 	onWindowResize = () => {
@@ -386,7 +401,7 @@ class Image {
 	getSrc = () => {
 		const { onBeforeRender } = this.options;
 		return onBeforeRender && this.status !== 'error'
-			? onBeforeRender(this.status, this.src)
+			? onBeforeRender(this.status, this.src, this.editor)
 			: this.src;
 	};
 
@@ -397,22 +412,22 @@ class Image {
 		);
 	}
 
-	openZoom(event: MouseEvent | TouchEvent) {
+	openZoom = (event: MouseEvent | TouchEvent) => {
 		event.preventDefault();
 		event.stopPropagation();
-
-		const imageArray: Array<PhotoSwipe.Item> = [];
-		const cardRoot = this.editor.card.closest(this.root);
+		const editor = this.editor;
+		const imageArray: PhotoSwipe.Item[] = [];
+		const cardRoot = editor.card.closest(this.root);
 		let rootIndex = 0;
 
-		this.editor.container
+		editor.container
 			.find('[data-card-key="image"]')
 			.toArray()
 			.filter((image) => {
 				return image.find('img').length > 0;
 			})
 			.forEach((imageNode, index) => {
-				const card = this.editor.card.find<ImageValue>(imageNode);
+				const card = editor.card.find<ImageValue>(imageNode);
 				const value = card?.getValue();
 				if (!card || !value) return;
 				const image = card.getCenter().find('img');
@@ -427,7 +442,8 @@ class Image {
 					: imageHeight * winPixelRatio;
 				let src = value['src'];
 				const { onBeforeRender } = this.options;
-				if (onBeforeRender) src = onBeforeRender('done', src);
+				if (onBeforeRender)
+					src = onBeforeRender('done', src, this.editor);
 				const msrc = image.attributes('src');
 				imageArray.push({
 					src,
@@ -440,7 +456,7 @@ class Image {
 				}
 			});
 		this.pswp.open(imageArray, rootIndex);
-	}
+	};
 
 	closeZoom() {
 		this.pswp?.close();
@@ -454,9 +470,10 @@ class Image {
 		if (!clientWidth || !clientHeight) {
 			return;
 		}
+		const editor = this.editor;
 		this.maxWidth = this.getMaxWidth();
 		this.rate = clientHeight / clientWidth;
-		if (isMobile || !isEngine(this.editor) || this.editor.readonly) return;
+		if (isMobile || !isEngine(editor) || editor.readonly) return;
 		if (this.options.enableResizer === false) {
 			return;
 		}
@@ -472,18 +489,21 @@ class Image {
 		const resizerNode = resizer.render();
 		this.root.find('.data-image-detail').append(resizerNode);
 		this.resizer = resizer;
-		this.resizer.on('dblclick', (event: MouseEvent) =>
-			this.openZoom(event),
-		);
+		this.resizer.on('dblclick', this.openZoom);
 	}
 
 	destroyEditor() {
+		this.resizer?.off('dblclick', this.openZoom);
 		this.resizer?.destroy();
 	}
 
 	destroy() {
 		window.removeEventListener('resize', this.onWindowResize);
 		this.editor.off('editor:resize', this.onWindowResize);
+		this.destroyEditor();
+		this.image.off('click', this.openZoom);
+		this.image.off('dblclick', this.openZoom);
+		this.maximize.off('click', this.openZoom);
 	}
 
 	focus = () => {
@@ -513,17 +533,15 @@ class Image {
 		if (display === CardType.BLOCK) {
 			this.root.addClass('data-image-blcok');
 		}
+		const editor = this.editor;
 		if (enableResizer === false) {
 			this.root.addClass('data-image-disable-resize');
 		}
-		if (this.status === 'error' && isEngine(this.editor)) {
+		if (this.status === 'error' && isEngine(editor)) {
 			this.root = $(
 				this.renderTemplate(
 					this.message ||
-						this.editor.language.get<string>(
-							'image',
-							'uploadError',
-						),
+						editor.language.get<string>('image', 'uploadError'),
 				),
 			);
 			this.bindErrorEvent(this.root);
@@ -591,25 +609,25 @@ class Image {
 
 		this.image.on('load', () => this.imageLoadCallback());
 		this.image.on('error', () => this.imageLoadError());
+		if (!isMobile) {
+			this.root.on('mouseenter', () => {
+				this.maximize.show();
+			});
+			this.root.on('mouseleave', () => {
+				this.maximize.hide();
+			});
+		}
 
-		if (isEngine(this.editor) || !this.root.inEditor()) {
-			if (!isMobile) {
-				this.root.on('mouseenter', () => {
-					this.maximize.show();
-				});
-				this.root.on('mouseleave', () => {
-					this.maximize.hide();
-				});
-			}
-			if (!isEngine(this.editor) || this.editor.readonly) {
-				const link = this.image.closest('a');
-				if (link.length === 0) {
-					this.image.on('click', (event) => this.openZoom(event));
-				}
-			}
+		if (!isEngine(editor) || editor.readonly) {
+			const link = this.image.closest('a');
 			// 无链接
-			this.image.on('dblclick', (event) => this.openZoom(event));
-			this.maximize.on('click', (event) => this.openZoom(event));
+			if (link.length === 0) {
+				this.image.on('click', this.openZoom);
+			}
+		}
+		this.maximize.on('click', this.openZoom);
+		if (isEngine(editor) || !this.root.inEditor()) {
+			this.image.on('dblclick', this.openZoom);
 		}
 	}
 }

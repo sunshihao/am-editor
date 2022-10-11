@@ -22,6 +22,9 @@ import type { VideoUploaderOptions } from './uploader';
 import locales from './locales';
 import { VideoOptions } from './types';
 
+const PARSE_HTML = 'parse:html';
+const PASTE_EACH = 'paste:each';
+const PASTE_SCHEMA = 'paste:schema';
 export default class VideoPlugin<
 	T extends VideoOptions = VideoOptions,
 > extends Plugin<T> {
@@ -30,12 +33,11 @@ export default class VideoPlugin<
 	}
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
-		this.editor.on('paste:schema', (schema: SchemaInterface) =>
-			this.pasteSchema(schema),
-		);
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_EACH, this.pasteHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
 	}
 
 	execute(
@@ -137,7 +139,7 @@ export default class VideoPlugin<
 		});
 	}
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add({
 			type: 'block',
 			name: 'div',
@@ -149,17 +151,18 @@ export default class VideoPlugin<
 				},
 			},
 		});
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.isElement()) {
 			const type = node.attributes('data-type');
 			if (type === VideoComponent.cardName) {
 				const value = node.attributes('data-value');
 				const cardValue = decodeCardValue(value) as VideoValue;
 				if (!cardValue.url) return;
-				this.editor.card.replaceNode(
+				editor.card.replaceNode(
 					node,
 					VideoComponent.cardName,
 					cardValue,
@@ -169,12 +172,13 @@ export default class VideoPlugin<
 			}
 		}
 		return true;
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: VideoValue) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
 		root.find(
 			`[${CARD_KEY}="${VideoComponent.cardName}"],[${READY_CARD_KEY}="${VideoComponent.cardName}"]`,
 		).each((cardNode) => {
@@ -191,13 +195,19 @@ export default class VideoPlugin<
 				}"  data-value="${encodeCardValue(
 					value,
 				)}"><video controls src="${sanitizeUrl(
-					onBeforeRender ? onBeforeRender('query', url) : url,
+					onBeforeRender
+						? onBeforeRender('query', url, this.editor)
+						: url,
 				)}" poster="${
 					!cover
 						? 'none'
 						: sanitizeUrl(
 								onBeforeRender
-									? onBeforeRender('cover', cover)
+									? onBeforeRender(
+											'cover',
+											cover,
+											this.editor,
+									  )
 									: cover,
 						  )
 				}" webkit-playsinline="webkit-playsinline" playsinline="playsinline" style="outline:none;" /></div>`;
@@ -207,8 +217,17 @@ export default class VideoPlugin<
 					newNode = callback(newNode, value);
 				}
 				node.replaceWith(newNode);
+				results.push(newNode);
 			} else node.remove();
 		});
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
 	}
 }
 

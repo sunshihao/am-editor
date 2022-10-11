@@ -1,4 +1,4 @@
-import { DATA_ELEMENT, ROOT } from './root';
+import { DATA_ELEMENT, DATA_ID, ROOT } from './root';
 import $ from '../node/query';
 import { ConversionData } from '../types';
 import {
@@ -24,9 +24,10 @@ const defaultConversion: ConversionData = [
 					attributes[CARD_KEY] || attributes[READY_CARD_KEY]
 				).toLowerCase(),
 				editable: attributes[CARD_EDITABLE_KEY],
+				[DATA_ID]: attributes[DATA_ID],
 			};
 			//其它 data 属性
-			Object.keys(oldAttrs).forEach((attrName) => {
+			for (const attrName in oldAttrs) {
 				if (
 					attrName !== READY_CARD_KEY &&
 					attrName.indexOf('data-') === 0 &&
@@ -34,23 +35,23 @@ const defaultConversion: ConversionData = [
 				) {
 					attributes[attrName] = oldAttrs[attrName];
 				}
-			});
+			}
 
 			if (value !== undefined) {
 				attributes.value = value;
 			}
 			style = {};
 			const card = $('<card />');
-			Object.keys(attributes).forEach((name) => {
-				card.attributes(name, attributes[name]);
-			});
+			for (const attrName in attributes) {
+				card.attributes(attrName, attributes[attrName]);
+			}
 			return card;
 		},
 	},
 	{
 		from: (_name, _styles, attributes) => {
 			return (
-				_name === 'div' &&
+				(_name === 'div' || _name === 'section') &&
 				(!attributes[CARD_KEY] || !attributes[READY_CARD_KEY]) &&
 				attributes[DATA_ELEMENT] !== ROOT
 			);
@@ -58,9 +59,9 @@ const defaultConversion: ConversionData = [
 		to: (_, style, attributes) => {
 			const p = $('<p />');
 			p.css(style);
-			Object.keys(attributes).forEach((name) => {
-				p.attributes(name, attributes[name]);
-			});
+			for (const attrName in attributes) {
+				p.attributes(attrName, attributes[attrName]);
+			}
 			return p;
 		},
 	},

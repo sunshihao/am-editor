@@ -1,4 +1,4 @@
-import { merge } from 'lodash';
+import merge from 'lodash/merge';
 import Language from './language';
 import {
 	BlockModelInterface,
@@ -42,7 +42,13 @@ import Mark from './mark';
 import Inline from './inline';
 import Block from './block';
 import Range from './range';
-import { CARD_ELEMENT_KEY, CARD_KEY, DATA_ID } from './constants';
+import {
+	CARD_ELEMENT_KEY,
+	CARD_KEY,
+	DATA_ELEMENT,
+	DATA_ID,
+	ROOT,
+} from './constants';
 import { isEngine } from './utils';
 import Parser from './parser';
 
@@ -56,6 +62,8 @@ class Editor<T extends EditorOptions = EditorOptions>
 		plugins: [] as PluginEntry[],
 		cards: [] as CardEntry[],
 		config: {},
+		iconFonts:
+			"url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff?t=1638071536645') format('woff'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype')",
 	} as T;
 	readonly container: NodeInterface;
 
@@ -106,7 +114,27 @@ class Editor<T extends EditorOptions = EditorOptions>
 
 	constructor(selector: Selector, options?: EditorOptions) {
 		this.options = { ...this.options, ...options };
+		let { iconFonts } = this.options;
+		let fontElement = document.querySelector('#am-iconfont');
+		if (!fontElement && iconFonts !== false) {
+			fontElement = document.createElement('style');
+			fontElement.setAttribute('type', 'text/css');
+			fontElement.setAttribute('id', 'am-iconfont');
+			let fontsStyle = '@font-face { font-family: "data-icon";';
+			if (Array.isArray(iconFonts)) {
+				iconFonts = iconFonts
+					.map(
+						(font) => `url('${font.url}') format('${font.format}')`,
+					)
+					.join(',');
+			}
+			fontsStyle += `src: ${iconFonts};}`;
+			fontElement.innerHTML = fontsStyle;
+			document.head.appendChild(fontElement);
+		}
+
 		this.container = $(selector);
+		this.container.attributes(DATA_ELEMENT, ROOT);
 		// 多语言
 		this.language = new Language(
 			this.options.lang || 'zh-CN',
@@ -134,7 +162,7 @@ class Editor<T extends EditorOptions = EditorOptions>
 		this.plugin = new Plugin(this);
 		// 节点管理
 		this.node = new NodeModel(this);
-		this.nodeId = new NodeId(this);
+		this.nodeId = new NodeId(this.schema);
 		// 列表
 		this.list = new List(this);
 		// 样式标记
@@ -158,8 +186,11 @@ class Editor<T extends EditorOptions = EditorOptions>
 		this.inline.init();
 		this.block.init();
 		this.list.init();
-		this.card.init(this.options.cards || []);
-		this.plugin.init(this.options.plugins || [], this.options.config || {});
+		const { plugins, cards, config } = this.options;
+		this.card.init(cards ?? []);
+		const configData =
+			typeof config === 'function' ? config(this) : config ?? {};
+		this.plugin.init(plugins ?? [], configData);
 		this.nodeId.init();
 	}
 
@@ -185,16 +216,20 @@ class Editor<T extends EditorOptions = EditorOptions>
 		return this.event.trigger<R>(eventType, ...args);
 	}
 
-	messageSuccess(message: string) {
-		console.log(`success:${message}`);
+	messageSuccess(type: string, message: string, ...args: any[]) {
+		console.log(type, `success:${message}`, ...args);
 	}
 
-	messageError(error: string) {
-		console.log(`error:${error}`);
+	messageError(type: string, error: string, ...args: any[]) {
+		console.error(type, `error:${error}`, ...args);
 	}
 
-	messageConfirm(message: string): Promise<boolean> {
-		console.log(`confirm:${message}`);
+	messageConfirm(
+		type: string,
+		message: string,
+		...args: any[]
+	): Promise<boolean> {
+		console.log(type, `confirm:${message}`, ...args);
 		return Promise.reject(false);
 	}
 
@@ -202,7 +237,7 @@ class Editor<T extends EditorOptions = EditorOptions>
 		range?: RangeInterface,
 	): Record<'html' | 'text', string> | undefined {
 		if (!range) range = Range.from(this) ?? undefined;
-		if (!range) throw 'Range is null';
+		if (!range) return;
 		range = range.cloneRange(); //.shrinkToElementNode();
 		let card = range.startNode.closest(`[${CARD_KEY}]`, (node) => {
 			return $(node).isEditable()
@@ -256,35 +291,46 @@ class Editor<T extends EditorOptions = EditorOptions>
 				root = range.commonAncestorNode;
 			}
 		}
-		const nodes: Node[] =
-			root.name === '#text' ? [document.createElement('span')] : [];
-		card = root.closest(`[${CARD_KEY}]`, (node) => {
-			if ($(node).isEditable()) return;
-			if (node.nodeType === Node.ELEMENT_NODE) {
-				const display = window
-					.getComputedStyle(node as Element)
-					.getPropertyValue('display');
-				if (display === 'inline') {
-					nodes.push(node.cloneNode());
-				}
+		if (!root.inEditor() && !root.isRoot()) return;
+		if (range.collapsed) {
+			return;
+		}
+
+		const setNodes = (nodes: Node[]) => {
+			if (0 === nodes.length) return {};
+			for (let i = nodes.length - 1; i > 0; i--) {
+				const node = nodes[i];
+				node.appendChild(nodes[i - 1]);
 			}
+			return {
+				inner: nodes[0],
+				outter: nodes[nodes.length - 1],
+			};
+		};
+
+		card = root.closest(`[${CARD_KEY}]`, (node) => {
 			return node.parentNode || undefined;
 		});
-		if (card.length > 0) return;
-		const { node, list } = this;
-		const hasChildEngine =
-			root.find('.am-engine-view').length > 0 ||
-			root.find('.am-engine').length > 0;
-		const hasParentEngine =
-			root.closest('.am-engine-view').length > 0 ||
-			root.closest('.am-engine').length > 0;
-		if (!hasChildEngine && !hasParentEngine) return;
-		if (range.collapsed) {
-			return {
-				html: '',
-				text: '',
-			};
+		if (card.length > 0) {
+			const compnoent = this.card.find(card);
+			if (compnoent && compnoent.getSelectionNodes) {
+				const nodes = compnoent.getSelectionNodes();
+				if (nodes.length > 0) {
+					const { inner, outter } = setNodes(
+						nodes.map((node) => node[0]),
+					);
+					let html = nodes.map((node) => node.html()).join('');
+					const parser = new Parser(`<div>${html}</div>`, this);
+					html = parser.toHTML(inner, outter);
+					const text = new Parser(html, this).toText(
+						this.schema,
+						true,
+					);
+					return { html, text };
+				}
+			} else if (!compnoent?.isEditable) return;
 		}
+		const { node, list } = this;
 		// 修复自定义列表选择范围
 		let customizeStartItem: NodeInterface | undefined;
 		const li = range.startNode.closest('li');
@@ -335,6 +381,20 @@ class Editor<T extends EditorOptions = EditorOptions>
 			}
 		}
 		const contents = range.enlargeToElementNode(true).cloneContents();
+
+		// 复制纯文本，获取外层的样式包裹层
+		const nodes: Node[] = [];
+		if (
+			root.isText() &&
+			contents.childNodes.length === 1 &&
+			contents.firstChild?.nodeType === Node.TEXT_NODE
+		) {
+			let parent = root.parent();
+			while (parent && (node.isMark(parent) || node.isInline(parent))) {
+				nodes.push(parent.clone(false).get<Node>()!);
+				parent = parent.parent();
+			}
+		}
 		// if (customizeStartItem) {
 		// 	contents.removeChild(contents.childNodes[0]);
 		// 	contents.prepend(customizeStartItem[0]);
@@ -379,17 +439,6 @@ class Editor<T extends EditorOptions = EditorOptions>
 				listMergeBlocks.push(parent);
 			}
 		});
-		const setNodes = (nodes: Node[]) => {
-			if (0 === nodes.length) return {};
-			for (let i = nodes.length - 1; i > 0; i--) {
-				const node = nodes[i];
-				node.appendChild(nodes[i - 1]);
-			}
-			return {
-				inner: nodes[0],
-				outter: nodes[nodes.length - 1],
-			};
-		};
 		const { inner, outter } = setNodes(nodes);
 		const listNodes: NodeInterface[] = [];
 		contents.childNodes.forEach((child) => {
@@ -408,6 +457,7 @@ class Editor<T extends EditorOptions = EditorOptions>
 	}
 
 	destroy() {
+		this.container.removeAttributes(DATA_ELEMENT);
 		this.event.destroy();
 		this.plugin.destroy();
 		this.card.destroy();

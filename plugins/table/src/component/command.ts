@@ -81,7 +81,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 		const cloneNode = cols.eq(colBase)?.clone();
 		if (!cloneNode) return;
 		let counter = count;
-
+		const nodeId = this.editor.nodeId;
 		while (counter > 0) {
 			// 插入头 和 col
 			const cloneColHeader = $(baseColHeader.outerHTML);
@@ -93,7 +93,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 			const insertCloneCol = cloneNode?.clone();
 			insertCloneCol.removeAttributes(DATA_ID);
 			insertCloneCol.attributes('width', width);
-			this.editor.nodeId.create(insertCloneCol);
+			nodeId.create(insertCloneCol);
 			const baseCol = cols[index];
 			if (insertMethod === 'after') $(baseCol).after(insertCloneCol);
 			else colgroup[0].insertBefore(insertCloneCol[0], baseCol);
@@ -109,6 +109,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 					DATA_TRANSIENT_ATTRIBUTES,
 					'table-cell-selection',
 				);
+				nodeId.generate(td);
 			}
 		});
 
@@ -163,11 +164,13 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 		if (!tableModel || !this.tableRoot) return;
 		const table = tableModel.table;
 		const selectArea = { ...selection.getSelectArea() };
-		selection.each((cell) => {
-			if (!helper.isEmptyModelCol(cell)) {
-				selectArea.end.col += cell.colSpan - 1;
-			}
-		});
+		if (selectArea.end.col - selectArea.begin.col === 0) {
+			selection.each((cell) => {
+				if (!helper.isEmptyModelCol(cell)) {
+					selectArea.end.col += cell.colSpan - 1;
+				}
+			});
+		}
 		const count = selectArea.end.col - selectArea.begin.col + 1;
 		const colgroup = this.tableRoot.find('colgroup');
 		let trs = this.tableRoot.find('tr');
@@ -238,6 +241,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 							td.innerHTML = this.table.template.getEmptyCell();
 							td.colSpan = tdModel.colSpan - cutCount;
 							td.rowSpan = tdModel.rowSpan;
+							this.editor.nodeId.generate(td);
 							//if(tdModel.element)
 							//    helper.copyCss(tdModel.element, td)
 						}
@@ -314,6 +318,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 			});
 		});
 		let _count = count;
+		const nodeId = this.editor.nodeId;
 		const _loop = () => {
 			const tr = this.tableRoot
 				?.get<HTMLTableElement>()
@@ -331,6 +336,8 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 			$(baseRowBar)[insertMethod](
 				$((baseRowBar as HTMLElement).outerHTML),
 			);
+			nodeId.generate(tr);
+			nodeId.generateAll(tr);
 			_count--;
 		};
 
@@ -387,11 +394,15 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 		const table = tableModel.table;
 		const selectArea = { ...selection.getSelectArea() };
 		const { begin, end } = selectArea;
-		selection.each((cell) => {
-			if (!helper.isEmptyModelCol(cell)) {
-				end.row += cell.rowSpan - 1;
-			}
-		});
+		// 单独选中一行，就计算是否有合并的单元格
+		if (end.row - begin.row === 0) {
+			selection.each((cell) => {
+				if (!helper.isEmptyModelCol(cell)) {
+					end.row += cell.rowSpan - 1;
+				}
+			});
+		}
+
 		const count = end.row - begin.row + 1;
 		const trs = this.tableRoot.find('tr');
 
@@ -425,6 +436,7 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 						td.innerHTML = this.table.template.getEmptyCell();
 						td.colSpan = tdModel.colSpan;
 						td.rowSpan = tdModel.rowSpan - cutCount;
+						this.editor.nodeId.generate(td);
 					}
 				}
 
@@ -458,15 +470,16 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 	}
 
 	removeTable() {
-		if (!isEngine(this.editor)) this.emit('tableRemoved');
-		this.editor.card.remove(this.table.id);
+		const editor = this.editor;
+		if (!isEngine(editor)) this.emit('tableRemoved');
+		editor.card.remove(this.table.id);
 	}
 
 	copy(all: boolean = false) {
 		const { selection, helper } = this.table;
 		const areaHtml = selection.getSelectionHtml(all);
 		if (!areaHtml) return;
-		this.editor.clipboard.copy($(areaHtml)[0]);
+		this.editor.clipboard.copy(areaHtml);
 		helper.copyHTML(areaHtml);
 	}
 
@@ -552,6 +565,10 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 		return !!this.table.helper.getCopyData();
 	};
 
+	clearCopyData = () => {
+		this.table.helper.clearCopyData();
+	};
+
 	mockPaste(...args: any) {
 		const data = this.table.helper.getCopyData();
 		if (!data) return;
@@ -574,21 +591,22 @@ class TableCommand extends EventEmitter2 implements TableCommandInterface {
 		const isSingleTd = begin.row === end.row && begin.col === end.col;
 		const { html, text } = data;
 		if (!html) return;
-		const { schema, conversion } = this.editor;
-		const pasteHTML = new Parser(html, this.editor).toValue(
-			schema,
-			conversion,
-		);
+		const editor = this.editor;
+		const { schema, conversion } = editor;
+		const pasteHTML = new Parser(html, editor).toValue(schema, conversion);
 		const element = helper.trimBlankSpan($(pasteHTML));
-		this.editor.nodeId.generateAll(element, true);
+		editor.nodeId.generateAll(element, true);
 		if (element.name === 'table') {
 			helper.normalizeTable(element);
 			const pasteTableModel = helper.getTableModel(element);
 			const rowCount = pasteTableModel.rows;
 			const colCount = pasteTableModel.cols;
 			const startCell = pasteTableModel.table[0][0];
-			const cell = tableModel.table[begin.row][begin.col];
+			const row = tableModel.table[begin.row];
+			if (!row) return;
+			const cell = row[begin.col];
 			if (
+				!cell ||
 				helper.isEmptyModelCol(startCell) ||
 				helper.isEmptyModelCol(cell)
 			)

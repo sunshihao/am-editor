@@ -1,8 +1,6 @@
 import md5 from 'blueimp-md5';
 import { NodeInterface } from '../types';
-import $ from '../node/query';
 import { DATA_ID } from '../constants';
-import { isNode, isNodeEntry } from './utils';
 
 const _counters: { [key: string]: number } = {};
 
@@ -48,12 +46,22 @@ export default (
 	unique: boolean = true,
 ) => {
 	let prefix = '';
-	if (isNode(value)) value = $(value);
-	if (isNodeEntry(value)) {
-		const attributes = value.attributes() || {};
-		delete attributes[DATA_ID];
-		prefix = value.name.substring(0, 1);
-		value = `${value.name}_${JSON.stringify(attributes)}`;
+	if (typeof value !== 'string') {
+		let node = (value[0] ?? value) as Node;
+		if (node.nodeType === Node.ELEMENT_NODE) {
+			const element = node as HTMLElement;
+			const name = element.localName;
+			prefix = name.substring(0, 1);
+			value = name;
+			const attributes = element.attributes;
+			for (let i = attributes.length; i--; ) {
+				const item = attributes[i];
+				if (![DATA_ID, 'id'].includes(item.name))
+					value += `${item.name}="${item.value}"`;
+			}
+		} else {
+			value = node.textContent ?? '';
+		}
 	}
 	const cachePerfix = valueCaches.get(value);
 	if (!cachePerfix) {

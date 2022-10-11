@@ -83,7 +83,9 @@ abstract class CardEntry<T extends CardValue = CardValue>
 
 	get id() {
 		if (this._id) return this._id;
-		const value = this.getValue();
+		const attributesValues = this.root.attributes(CARD_VALUE_KEY);
+		if (!attributesValues) return {} as T;
+		const value = decodeCardValue(attributesValues);
 		return typeof value === 'object' ? value?.id || '' : '';
 	}
 
@@ -92,18 +94,23 @@ abstract class CardEntry<T extends CardValue = CardValue>
 	}
 
 	get type() {
-		return (
-			this.getValue()?.type ||
-			(this.root.attributes(CARD_TYPE_KEY) as CardType)
-		);
+		let type = this.root.attributes(CARD_TYPE_KEY);
+		if (!type) {
+			const attributesValues = this.root.attributes(CARD_VALUE_KEY);
+			const value = decodeCardValue(attributesValues || '{}');
+			type = value?.type || (this.constructor as CardEntryType).cardType;
+		}
+		return type as CardType;
 	}
 
 	set type(type: CardType) {
 		if (!this.name || type === this.type) return;
 		// 替换后重新渲染
-		const { card } = this.editor;
+		const card = this.editor.card;
+		const attributesValues = this.root.attributes(CARD_VALUE_KEY);
+		const value = decodeCardValue(attributesValues || '{}');
 		const component = card.replace(this, this.name, {
-			...this.getValue(),
+			...value,
 			type,
 		});
 		card.render(component.root);
@@ -127,7 +134,7 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		this._id = value.id;
 		value.type = type;
 		this.setValue(value);
-		this.defaultMaximize = new Maximize(this.editor, this);
+		this.defaultMaximize = new Maximize(editor, this);
 	}
 
 	init() {
@@ -135,13 +142,15 @@ abstract class CardEntry<T extends CardValue = CardValue>
 			CARD_EDITABLE_KEY,
 			this.isEditable ? 'true' : 'false',
 		);
-		this.toolbarModel?.hide();
-		this.toolbarModel?.destroy();
+		const toolbar = this.toolbarModel;
+		toolbar?.hide();
+		toolbar?.destroy();
+		const editor = this.editor;
 		if (this.toolbar) {
-			this.toolbarModel = new Toolbar(this.editor, this);
+			this.toolbarModel = new Toolbar(editor, this);
 		}
 		if (this.resize) {
-			this.resizeModel = new Resize(this.editor, this);
+			this.resizeModel = new Resize(editor, this);
 		}
 	}
 
@@ -161,7 +170,8 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		if (value == null) {
 			return;
 		}
-		const currentValue = this.getValue();
+		const attributesValues = this.root.attributes(CARD_VALUE_KEY);
+		const currentValue = decodeCardValue(attributesValues || '{}');
 		if (!!currentValue?.id) delete value['id'];
 		value = { ...currentValue, ...value } as T;
 		if (value.type && currentValue?.type !== value.type) {
@@ -192,11 +202,16 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		const children = body.children();
 		const index = ['left', 'center', 'right'].indexOf(key);
 		if (index > -1) {
-			const child = children.eq(index);
-			if (child?.attributes(CARD_ELEMENT_KEY) === key) return child;
+			return children
+				.toArray()
+				.find((child) => child.attributes(CARD_ELEMENT_KEY) === key);
 		}
-		const tag = this.type === CardType.BLOCK ? 'div' : 'span';
-		return this.find(`${tag}[${CARD_ELEMENT_KEY}=${key}]`);
+		const tagName = this.type === CardType.BLOCK ? 'div' : 'span';
+		const targetNode = this.find(`${tagName}[${CARD_ELEMENT_KEY}=${key}]`);
+		return targetNode.name === tagName &&
+			targetNode.attributes(CARD_ELEMENT_KEY) === key
+			? targetNode
+			: undefined;
 	}
 
 	activate(activated: boolean) {
@@ -227,7 +242,9 @@ abstract class CardEntry<T extends CardValue = CardValue>
 	}
 
 	getCenter() {
-		return this.findByKey('center');
+		const center = this.findByKey('center');
+		if (!center) return $([]);
+		return center;
 	}
 
 	isCenter(node: NodeInterface) {
@@ -236,7 +253,7 @@ abstract class CardEntry<T extends CardValue = CardValue>
 				? `div[${CARD_ELEMENT_KEY}=center]`
 				: `span[${CARD_ELEMENT_KEY}=center]`,
 		);
-		return center.length > 0 && center.equal(this.findByKey('center'));
+		return center.length > 0 && !!this.findByKey('center')?.equal(center);
 	}
 
 	isCursor(node: NodeInterface) {
@@ -247,26 +264,35 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		if (node.isElement() && node.attributes(CARD_ELEMENT_KEY) !== 'left')
 			return false;
 		const cursor = node.closest(CARD_LEFT_SELECTOR);
-		return cursor.length > 0 && cursor.equal(this.findByKey('left'));
+		return cursor.length > 0 && !!this.findByKey('left')?.equal(cursor);
 	}
 
 	isRightCursor(node: NodeInterface) {
 		if (node.isElement() && node.attributes(CARD_ELEMENT_KEY) !== 'right')
 			return false;
 		const cursor = node.closest(CARD_RIGHT_SELECTOR);
-		return cursor.length > 0 && cursor.equal(this.findByKey('right'));
+		return cursor.length > 0 && !!this.findByKey('right')?.equal(cursor);
 	}
 
 	focus(range: RangeInterface, toStart?: boolean) {
 		const cardLeft = this.findByKey('left');
 		const cardRight = this.findByKey('right');
 
-		if (cardLeft.length === 0 || cardRight.length === 0) {
+		if (
+			!cardLeft ||
+			cardLeft.length === 0 ||
+			!cardRight ||
+			cardRight.length === 0
+		) {
 			return;
 		}
-
-		range.select(toStart ? cardLeft : cardRight, true);
-		range.collapse(false);
+		const zeroElement = toStart ? cardLeft : cardRight;
+		range.select(zeroElement, true).shrinkToTextNode();
+		const textNode = zeroElement.first();
+		if (!textNode) return;
+		range.setStart(textNode, toStart ? 0 : 1);
+		range.collapse(true);
+		if (isEngine(this.editor)) this.editor.change.range.select(range);
 		if (this.onFocus) this.onFocus();
 	}
 
@@ -347,6 +373,7 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		return this.onSelectByOther(activated, value);
 	}
 	onChange?(trigger: 'remote' | 'local', node: NodeInterface): void;
+	writeHistoryOnValueChange?(value: T): void | false;
 	private initToolbar() {
 		if (this.toolbar) {
 			if (!this.toolbarModel)
@@ -362,6 +389,9 @@ abstract class CardEntry<T extends CardValue = CardValue>
 	}
 	private initResize() {
 		if (this.resize) {
+			if (!this.resizeModel) {
+				this.resizeModel = new Resize(this.editor, this);
+			}
 			const container =
 				typeof this.resize === 'function'
 					? this.resize()
@@ -391,8 +421,9 @@ abstract class CardEntry<T extends CardValue = CardValue>
 	didRender() {
 		if (this.loading) {
 			this.find(`.${CARD_LOADING_KEY}`).remove();
-			if (!isEngine(this.editor))
+			setTimeout(() => {
 				this.root.removeAttributes(CARD_LOADING_KEY);
+			}, 200);
 		}
 		this.initResize();
 		this.initToolbar();
@@ -401,8 +432,6 @@ abstract class CardEntry<T extends CardValue = CardValue>
 		}
 	}
 	abstract render(): NodeInterface | string | void;
-
-	updateBackgroundSelection?(range: RangeInterface): void;
 
 	drawBackground?(
 		node: NodeInterface,

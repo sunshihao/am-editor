@@ -24,7 +24,7 @@ new Engine(...,{ plugins:[ Image , ImageUploader ] , cards:[ ImageComponent ]})
 `onBeforeRender` 图片渲染前对图片地址进行修改
 
 ```ts
-onBeforeRender?: (status: 'uploading' | 'done', src: string) => string;
+onBeforeRender?: (status: 'uploading' | 'done', src: string, editor: EditorInterface) => string;
 ```
 
 `enableResizer` 图片大小是否可以拖动修改，默认为 true
@@ -32,6 +32,8 @@ onBeforeRender?: (status: 'uploading' | 'done', src: string) => string;
 `enableTypeSwitch` 是否启用 block inline 模式切换，默认为 true
 
 `defaultType` 设置默认的图片卡片类型，默认为 'inline'
+
+`maxHeight` 设置默认图片展示的最高高度，默认不限制
 
 ## `ImageUploader` 可选项
 
@@ -88,7 +90,7 @@ file:{
    /**
     * 请求头
     */
-    headers?: { [key: string]: string } | (() => { [key: string]: string });
+    headers?: Record<string, string> | (() => Promise<Record<string, string>>);
     /**
      * 数据返回类型，默认 json
      */
@@ -96,7 +98,7 @@ file:{
     /**
      * 额外携带数据上传
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * 图片文件上传时 FormData 的名称，默认 file
      */
@@ -154,7 +156,7 @@ remote:{
     /**
     * 请求头
     */
-    headers?: { [key: string]: string } | (() => { [key: string]: string });
+    headers?: Record<string, string> | (() => Promise<Record<string, string>>);
     /**
      * 数据返回类型，默认 json
      */
@@ -162,7 +164,7 @@ remote:{
     /**
      * 额外携带数据上传
      */
-    data?: {};
+    data?: Record<string, RequestDataValue> | FormData | (() => Promise<Record<string, RequestDataValue> | FormData>)
     /**
      * 图片文件丢之上传时请求参数的名称，默认 url
      */
@@ -190,27 +192,6 @@ parse?: (
     result: boolean;
     data: string;
 };
-```
-
-### Markdown
-
-默认支持 markdown，传入`false`关闭
-
-ImageUploader 插件 markdown 语法为`/^!\[([^\]]{0,})\]\((https?:\/\/[^\)]{5,})\)$/`
-
-获取到图片地址后，会使用 `remote` 配置将图片地址 `POST` 到服务端，请求参数为 `url`，服务端使用图片地址下载保存后将新的图片地址返回
-
-```ts
-markdown?: boolean;//默认开启，false 关闭
-//使用配置
-new Engine(...,{
-    config:{
-        [ImageUploader.pluginName]:{
-            //关闭markdown
-            markdown:false
-        }
-    }
- })
 ```
 
 ## 命令

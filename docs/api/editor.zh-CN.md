@@ -26,6 +26,12 @@ readonly kind: 'engine' | 'view';
 
 类型：`NodeInterface`
 
+### `scrollNode`
+
+滚动条节点
+
+类型：`NodeInterface | null`
+
 ### `root`
 
 编辑器根节点，默认为编辑器节点的父节点
@@ -37,6 +43,12 @@ readonly kind: 'engine' | 'view';
 编辑器命令
 
 类型：`CommandInterface`
+
+### `request`
+
+数据请求与上传
+
+类型：`RequestInterface`
 
 ### `card`
 
@@ -117,6 +129,43 @@ nodeId: NodeIdInterface;
 
 ## 方法
 
+### `setScrollNode`
+
+设置滚动节点
+
+```ts
+/**
+ * 设置滚动节点
+ * @param node 节点
+ */
+setScrollNode(node: HTMLElement): void;
+```
+
+### `getSelectionData`
+
+获取选中区域的的数据 html 和 文本
+
+```ts
+/**
+ * 获取选中区域的的数据 html 和 文本
+ * @param range 光标范围
+ */
+getSelectionData(
+ range?: RangeInterface,
+): Record<'html' | 'text', string> | undefined;
+```
+
+### `destroy`
+
+销毁编辑器
+
+```ts
+/**
+ * 销毁编辑器
+ */
+destroy(): void;
+```
+
 ### `on`
 
 事件绑定
@@ -168,7 +217,7 @@ trigger(eventType: string, ...args: any): any;
 * 显示成功的信息
 * @param message 信息
 */
-messageSuccess(message: string): void;
+messageSuccess(type: string, message: string, ...args: any[]): void;
 ```
 
 ### `messageError`
@@ -180,7 +229,7 @@ messageSuccess(message: string): void;
  * 显示错误信息
  * @param error 错误信息
  */
-messageError(error: string): void;
+messageError(type: string, message: string, ...args: any[]): void;
 ```
 
 ### `messageConfirm`
@@ -190,10 +239,10 @@ messageError(error: string): void;
 例如，使用 antd 的 Modal.confirm 组件
 
 ```ts
-engine.messageConfirm = (msg: string) => {
+engine.messageConfirm = (type: string, message: string, ...args: any[]) => {
 	return new Promise<boolean>((resolve, reject) => {
 		Modal.confirm({
-			content: msg,
+			content: message,
 			onOk: () => resolve(true),
 			onCancel: () => reject(),
 		});
@@ -208,5 +257,5 @@ engine.messageConfirm = (msg: string) => {
 * 消息确认
 * @param message 消息
 */
-messageConfirm(message: string): Promise<boolean>;
+messageConfirm(type: string, message: string, ...args: any[]): Promise<boolean>;
 ```

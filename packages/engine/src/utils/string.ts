@@ -1,3 +1,4 @@
+import tinycolor2 from 'tinycolor2';
 import { ANCHOR, CURSOR, FOCUS } from '../constants/selection';
 import {
 	CARD_EDITABLE_KEY,
@@ -55,17 +56,17 @@ export const toCamelCase = (
 };
 
 /**
- * RGB 颜色转换为16进制颜色代码
- * @param {string} rgb
+ * 颜色转换为16进制颜色代码
+ * @param {string} color
  */
-export const toHex = (rgb: string): string => {
+export const toHex = (color: string): string => {
 	const hex = (num: string) => {
 		const numChar = parseInt(num, 10).toString(16).toUpperCase();
 		return numChar.length > 1 ? numChar : '0' + numChar;
 	};
 
 	const reg = /rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/gi;
-	return rgb.replace(reg, ($0, $1, $2, $3) => {
+	return color.replace(reg, ($0, $1, $2, $3) => {
 		return '#' + hex($1) + hex($2) + hex($3);
 	});
 };
@@ -108,14 +109,13 @@ export const getStyleMap = (style: string): Record<string, string> => {
 	if (cacheStyle) return Object.assign({}, cacheStyle);
 	const reg = /\s*([\w\-]+)\s*:([^;]*)(;|$)/g;
 	let match;
-
+	style = style.toLowerCase();
 	while ((match = reg.exec(style))) {
-		const key = match[1].toLowerCase().trim();
-		let val = match[2].trim();
-		if (key.endsWith('color') || val.toLowerCase().includes('rgb')) {
+		let [_, key, val] = match;
+		if (key.endsWith('color') || val.includes('rgb')) {
 			val = toHex(val);
 		}
-		map[key] = val;
+		map[key.trim()] = val.trim();
 	}
 	stylesCaches.set(key, map);
 	return Object.assign({}, map);
@@ -251,7 +251,7 @@ export const transformCustomTags = (value: string) => {
 				list.push(
 					' '
 						.concat(CARD_EDITABLE_KEY, '="')
-						.concat(editable || '', '"'),
+						.concat(editable || 'false', '"'),
 				);
 			Object.keys(attributes).forEach((attrsName) => {
 				if (

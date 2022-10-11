@@ -20,7 +20,7 @@ const engine = new Engine(render node, {
 -   Detailed: Language configuration, temporarily supports `zh-CN`, `en-US`. Can use `locale` configuration
 
 ```ts
-const view = new View(render node, {
+const engine = new Engine(render node, {
     lang:'zh-CN',
 });
 ```
@@ -34,7 +34,7 @@ const view = new View(render node, {
 Language pack, default language pack [https://github.com/yanmao-cc/am-editor/blob/master/locale](https://github.com/yanmao-cc/am-editor/blob/master/locale)
 
 ```ts
-const view = new View(render node, {
+const engine = new Engine(render node, {
      locale: {
          'zh-CN': {
              test:'Test',
@@ -44,7 +44,7 @@ const view = new View(render node, {
          },
      }
 });
-console.log(view.language.get<string>('test'));
+console.log(engine.language.get<string>('test'));
 ```
 
 ### className
@@ -79,18 +79,13 @@ console.log(view.language.get<string>('test'));
 
 ### config
 
--   Type: `{ [key: string]: PluginOptions }`
+-   Type: `{ [key: string]: PluginOptions }` or `(editor) => { [key: string]: PluginOptions }`
 -   Default value: `{}`
--   Detailed: the configuration item of each plug-in, the key is the name of the plug-in, please refer to the description of each plug-in for detailed configuration. [Configuration example](https://github.com/yanmao-cc/am-editor/blob/master/examples/react/components/editor/config.tsx)
+-   Detailed: the configuration item of each plugin, the key is the name of the plugin, please refer to the description of each plugin for detailed configuration. [Configuration example](https://github.com/yanmao-cc/am-editor/blob/master/examples/react/components/editor/config.tsx)
 
 Some plugins require the configuration of additional properties:
 
 ```ts
-// Configure italic markdown syntax
-[Italic.pluginName]: {
-    // The default is _ underscore, here is modified to a single * sign
-    markdown:'*',
-},
 // upload picture
 [ImageUploader.pluginName]: {
     file: {
@@ -223,7 +218,7 @@ Some plugins require the configuration of additional properties:
 
 The difference with `View` rendering is that you can still see the editor's edits after `readonly` is set to read-only status.
 
-After rendering, `View` loses all editing capabilities and collaboration capabilities, `View` can render a `card` plug-in with interactive effects
+After rendering, `View` loses all editing capabilities and collaboration capabilities, `View` can render a `card` plugin with interactive effects
 
 `engine.getHtml()` can only get static `html` and cannot restore the interaction effect of `card` component, but it is very friendly to search engines
 
@@ -238,3 +233,58 @@ After rendering, `View` loses all editing capabilities and collaboration capabil
 -   Type: `boolena`
 -   Default value: `true`
 -   Detailed: Lazy rendering of cards (only cards with lazyRender enabled), the default is true
+
+### iconFonts
+
+-   Type: `Record<'url' | 'format', string>[] | string | false`
+-   Default: `url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff ?t=1638071536645') format('woff'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype')`
+-   Detailed: define the url of the iconfont file, the font file of at.alicdn.com is used by default, if you need to use the font file of other location, you can use this configuration
+
+```ts
+const engine = new Engine(container, {
+	iconFonts: [
+		{
+			url: '//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645',
+			format: 'woff2',
+			// ...
+		},
+	],
+	// or
+	iconFonts:
+		"url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff2?t=1638071536645') format('woff2'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.woff?t=1638071536645') format('woff'), url('//at.alicdn.com/t/font_1456030_lnqmc6a6ca.ttf?t=1638071536645') format('truetype')",
+});
+```
+
+### autoPrepend
+
+-   type: `boolean`
+-   Default: `true`
+-   Details: Click on the blank space in the editor head to automatically add an empty line (<div style="padding-top: 20px;"></div>) Clicking within 20 pixels of the padding-top will add an empty line
+
+### autoAppend
+
+-   type: `boolean`
+-   Default: `true`
+-   Details: Whether to automatically add a blank line when clicking on the blank space at the end of the editor (<div style="padding-bottom: 20px;"></div>) Clicking within 20 pixels of padding-bottom will add a blank line
+
+### markdown
+
+type:
+
+```ts
+markdown?: {
+	/**
+	* In markdown mode, by default, if the check function returns true, it will be converted directly
+	* 1. Use confirm mode, call engine.messageConfirm to confirm and convert again
+	* 2. false to turn off all markdown functions
+	*/
+	mode?: 'confirm' | false;
+	/**
+	* Detect whether it is markdown syntax, if true, convert the makrdown and paste it, if the default detection does not meet the requirements, you can use this function for custom detection
+	*/
+	check?: (text: string, html: string) => Promise<string | false>;
+};
+```
+
+-   Default: `undefined`
+-   markdown mode, the default is to directly convert when markdown syntax is detected. When using `confirm` mode, you need to call `engine.messageConfirm` to confirm and then convert.

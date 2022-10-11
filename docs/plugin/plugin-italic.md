@@ -19,12 +19,12 @@ new Engine(...,{ plugins:[Italic] })
 
 ## Optional
 
-### hot key
+### Hotkey
 
 The default shortcut key is `mod+i`, and multiple shortcut keys are passed in as an array
 
 ```ts
-//hot key,
+//hotkey,
 hotkey?: string | Array<string>;
 
 //Use configuration
@@ -33,25 +33,6 @@ new Engine(...,{
         "italic":{
             //Modify shortcut keys
             hotkey: "shortcut key"
-        }
-    }
- })
-```
-
-### Markdown
-
-Support markdown by default, pass in `false` to close
-
-Italic plugin markdown syntax is `_`
-
-```ts
-markdown?: boolean;//enabled by default, false off
-//Use configuration
-new Engine(...,{
-    config:{
-        "italic":{
-            //Close markdown
-            markdown:false
         }
     }
  })

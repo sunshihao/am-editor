@@ -1,11 +1,20 @@
-import { CardType, NodeInterface, PluginOptions } from '@aomao/engine';
+import {
+	CardToolbarItemOptions,
+	CardType,
+	EditorInterface,
+	NodeInterface,
+	PluginOptions,
+	ToolbarItemOptions,
+} from '@aomao/engine';
 import { EventEmitter2 } from 'eventemitter2';
+import PhotoSwipe from 'photoswipe';
 
 export interface PswpInterface extends EventEmitter2 {
 	root: NodeInterface;
 	barUI: NodeInterface;
 	closeUI: NodeInterface;
-	hoverControllerFadeInAndOut(): void;
+	bindControllerFadeInAndOut(): void;
+	unbindControllerFadeInAndOut(): void;
 	removeFadeOut(node: NodeInterface, id: string): void;
 	fadeOut(node: NodeInterface, id: string): void;
 	prev(): void;
@@ -23,7 +32,8 @@ export interface PswpInterface extends EventEmitter2 {
 	getCount(): number;
 	afterChange(): void;
 	setWhiteBackground(): void;
-	open(items: Array<PhotoSwipe.Item>, index: number): void;
+	open(items: PhotoSwipe.Item[], index: number): void;
+	reset: () => void;
 	close(): void;
 	destroy(): void;
 }
@@ -32,7 +42,11 @@ export interface ImageOptions extends PluginOptions {
 	/**
 	 * 图片渲染前调用，可以在这里修改图片链接
 	 */
-	onBeforeRender?: (status: 'uploading' | 'done', src: string) => string;
+	onBeforeRender?: (
+		status: 'uploading' | 'done',
+		src: string,
+		editor: EditorInterface,
+	) => string;
 	/**
 	 * 是否启用大小拖动，默认为 true
 	 */
@@ -45,4 +59,12 @@ export interface ImageOptions extends PluginOptions {
 	 * 默认使用的卡片类型
 	 */
 	defaultType?: CardType;
+	/**
+	 * 最高高度，设置后默认按最高高度缩放
+	 */
+	maxHeight?: number;
+	cardToolbars?: (
+		items: (ToolbarItemOptions | CardToolbarItemOptions)[],
+		editor: EditorInterface,
+	) => (ToolbarItemOptions | CardToolbarItemOptions)[];
 }

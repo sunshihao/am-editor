@@ -69,7 +69,7 @@ export interface NodeInterface {
 	/**
 	 * Node集合长度
 	 */
-	length: number;
+	readonly length: number;
 	/**
 	 * 事件集合
 	 */
@@ -155,8 +155,9 @@ export interface NodeInterface {
 	isEditableCard(): boolean;
 	/**
 	 * 判断当前节点是否为根节点
+	 * @param {Node} root 根节点
 	 */
-	isRoot(): boolean;
+	isRoot(root?: Node | NodeInterface): boolean;
 
 	/**
 	 * 判断当前是否为可编辑节点
@@ -165,8 +166,9 @@ export interface NodeInterface {
 
 	/**
 	 * 判断当前是否在根节点内
+	 * @param {Node} root 根节点
 	 */
-	inEditor(): boolean;
+	inEditor(root?: Node | NodeInterface): boolean;
 	/**
 	 * 是否是光标标记节点
 	 * @returns
@@ -499,9 +501,11 @@ export interface NodeInterface {
 	 * @param onEnd 遍历完(包括所有子节点)一个节点时的回调函数
 	 */
 	traverse(
-		callback: (node: NodeInterface) => boolean | void | NodeInterface,
+		callback: (
+			node: NodeInterface,
+		) => boolean | void | null | NodeInterface,
 		order?: boolean,
-		includeEditableCard?: boolean,
+		includeCard?: boolean | 'editable',
 		onStart?: (node: NodeInterface) => void,
 		onEnd?: (node: NodeInterface, next: NodeInterface | null) => void,
 	): void;
@@ -524,13 +528,12 @@ export interface NodeInterface {
 
 	/**
 	 * 获取节点下的所有子节点
-	 * @param includeEditableCard 是否包含可编辑卡片的节点
+	 * @param includeCard 是否包含卡片的节点
 	 */
-	allChildren(includeEditableCard?: boolean): Array<NodeInterface>;
+	allChildren(includeCard?: boolean | 'editable'): Array<NodeInterface>;
 
 	/**
-	 * 返回当前节点或者传入的节点所在当前节点的顶级window对象的视图边界
-	 * @param node 节点
+	 * 返回当前节点所在当前节点的顶级window对象的视图边界
 	 */
 	getViewport(): {
 		top: number;
@@ -582,9 +585,9 @@ export interface NodeModelInterface {
 	 */
 	isBlock(node: NodeInterface | Node, schema?: SchemaInterface): boolean;
 	/**
-	 * 判断block节点的子节点是否不包含blcok 节点
+	 * 判断block节点的子节点是否不包含blcok节点
 	 */
-	isNestedBlock(node: NodeInterface): boolean;
+	isNestedBlock(node: NodeInterface | Node): boolean;
 	/**
 	 * 判断节点是否是顶级根节点，父级为编辑器根节点，且，子级节点没有block节点
 	 * @param node 节点
@@ -758,7 +761,7 @@ export interface NodeIdInterface {
 	 * 在根节点内为需要创建data-id的子节点创建data-id
 	 * @param root 根节点
 	 */
-	generateAll(root?: Element | NodeInterface, force?: boolean): void;
+	generateAll(root: Element | NodeInterface, force?: boolean): void;
 	/**
 	 * 为节点创建一个随机data-id
 	 * @param node 节点

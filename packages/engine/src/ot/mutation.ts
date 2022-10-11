@@ -26,7 +26,7 @@ class Mutation extends EventEmitter2 implements MutationInterface {
 	isStopped: boolean;
 	private observer: MutationObserver;
 	private producer: Producer;
-	private isCache: boolean = false;
+	isCache: boolean = false;
 	private cache: MutationRecord[] = [];
 
 	constructor(node: NodeInterface, options: Options) {
@@ -122,6 +122,10 @@ class Mutation extends EventEmitter2 implements MutationInterface {
 
 	onChange(ops: Op[]) {
 		if (!this.isStopped) this.emit('onChange', ops);
+	}
+
+	diff(root: Element = this.engine.container.get<Element>()!): Op[] {
+		return this.producer.diff(root, this.doc?.data);
 	}
 }
 export default Mutation;

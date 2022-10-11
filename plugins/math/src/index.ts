@@ -17,32 +17,11 @@ import {
 } from '@aomao/engine';
 import MathComponent, { MathValue } from './component';
 import locales from './locales';
+import { MathOptions } from './types';
 
-export interface MathOptions extends PluginOptions {
-	/**
-	 * 请求生成公式svg地址
-	 */
-	action: string;
-	/**
-	 * 数据返回类型，默认 json
-	 */
-	type?: '*' | 'json' | 'xml' | 'html' | 'text' | 'js';
-	/**
-	 * 额外携带数据上传
-	 */
-	data?: {};
-	/**
-	 * 请求类型，默认 application/json;
-	 */
-	contentType?: string;
-	/**
-	 * 解析上传后的Respone，返回 result:是否成功，data:成功：公式数据，失败：错误信息
-	 */
-	parse?: (response: any) => {
-		result: boolean;
-		data: string;
-	};
-}
+const PARSE_HTML = 'parse:html';
+const PASTE_SCHEMA = 'paste:schema';
+const PASTE_EACH = 'paste:each';
 
 export default class Math<
 	T extends MathOptions = MathOptions,
@@ -56,12 +35,11 @@ export default class Math<
 	#request: Record<string, AjaxInterface> = {};
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
-		this.editor.on('paste:each', (child) => this.pasteHtml(child));
-		this.editor.on('paste:schema', (schema: SchemaInterface) =>
-			this.pasteSchema(schema),
-		);
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
+		editor.on(PASTE_EACH, this.pasteHtml);
+		editor.on(PASTE_SCHEMA, this.pasteSchema);
 	}
 
 	execute(...args: any): void {
@@ -93,18 +71,26 @@ export default class Math<
 		success: (url: string) => void,
 		failed: (message: string) => void,
 	) {
-		const { request } = this.editor;
-		const { action, type, contentType, data, parse } = this.options;
+		const { request, language } = this.editor;
+		const { action, type, contentType, parse, headers } = this.options;
+		const data = this.options.data;
 		this.#request[key]?.abort();
 		this.#request[key] = request.ajax({
 			url: action,
 			method: 'POST',
 			contentType: contentType || 'application/json',
 			type: type === undefined ? 'json' : type,
-			data: {
-				...data,
-				content: code,
-			},
+			headers,
+			data:
+				typeof data === 'function'
+					? async () => {
+							const newData = await data();
+							return { ...newData, content: code };
+					  }
+					: {
+							...data,
+							content: code,
+					  },
 			success: (response) => {
 				const url =
 					response.url || (response.data && response.data.url);
@@ -135,10 +121,7 @@ export default class Math<
 				}
 			},
 			error: (error) => {
-				failed(
-					error.message ||
-						this.editor.language.get('image', 'uploadError'),
-				);
+				failed(error.message || language.get('image', 'uploadError'));
 			},
 		});
 	}
@@ -232,7 +215,7 @@ export default class Math<
 		});
 	}
 
-	pasteSchema(schema: SchemaInterface) {
+	pasteSchema = (schema: SchemaInterface) => {
 		schema.add({
 			type: 'inline',
 			name: 'span',
@@ -244,18 +227,19 @@ export default class Math<
 				'data-value': '*',
 			},
 		});
-	}
+	};
 
-	pasteHtml(node: NodeInterface) {
-		if (!isEngine(this.editor)) return;
+	pasteHtml = (node: NodeInterface) => {
+		const editor = this.editor;
+		if (!isEngine(editor)) return;
 		if (node.isElement()) {
 			const attributes = node.attributes();
 			const type = attributes['data-type'];
-			if (type === MathComponent.cardName) {
+			if (type && type === MathComponent.cardName) {
 				const value = attributes['data-value'];
 				const cardValue = decodeCardValue(value);
 				if (!cardValue.url) return;
-				this.editor.card.replaceNode(
+				editor.card.replaceNode(
 					node,
 					MathComponent.cardName,
 					cardValue,
@@ -265,12 +249,13 @@ export default class Math<
 			}
 		}
 		return true;
-	}
+	};
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: MathValue) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
 		root.find(
 			`[${CARD_KEY}="${MathComponent.cardName}"],[${READY_CARD_KEY}="${MathComponent.cardName}"]`,
 		).each((cardNode) => {
@@ -298,10 +283,19 @@ export default class Math<
 				}
 				span.append(img);
 				node.replaceWith(span);
+				results.push(span);
 			} else node.remove();
 		});
+		return results;
+	};
+
+	destroy() {
+		const editor = this.editor;
+		editor.off(PARSE_HTML, this.parseHtml);
+		editor.off(PASTE_EACH, this.pasteHtml);
+		editor.off(PASTE_SCHEMA, this.pasteSchema);
 	}
 }
 
 export { MathComponent };
-export type { MathValue };
+export type { MathValue, MathOptions };

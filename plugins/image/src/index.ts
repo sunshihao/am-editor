@@ -17,14 +17,17 @@ import { ImageUploaderOptions } from './uploader';
 import locales from './locales';
 import { ImageOptions } from './types';
 
+const PARSE_HTML = 'parse:html';
+
 export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 	static get pluginName() {
 		return 'image';
 	}
 
 	init() {
-		this.editor.language.add(locales);
-		this.editor.on('parse:html', (node) => this.parseHtml(node));
+		const editor = this.editor;
+		editor.language.add(locales);
+		editor.on(PARSE_HTML, this.parseHtml);
 	}
 
 	execute(
@@ -110,17 +113,17 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 		});
 	}
 
-	parseHtml(
+	parseHtml = (
 		root: NodeInterface,
 		callback?: (node: NodeInterface, value: ImageValue) => NodeInterface,
-	) {
+	) => {
+		const results: NodeInterface[] = [];
+		const editor = this.editor;
 		root.find(
 			`[${CARD_KEY}="${ImageComponent.cardName}"],[${READY_CARD_KEY}="${ImageComponent.cardName}"]`,
 		).each((cardNode) => {
 			const node = $(cardNode);
-			const card = this.editor.card.find(
-				node,
-			) as ImageComponent<ImageValue>;
+			const card = editor.card.find(node) as ImageComponent<ImageValue>;
 			const value =
 				card?.getValue() ||
 				decodeCardValue(node.attributes(CARD_VALUE_KEY));
@@ -134,7 +137,7 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 				let src = value.src;
 				const { onBeforeRender } = this.options;
 				if (onBeforeRender) {
-					src = onBeforeRender(value.status, value.src);
+					src = onBeforeRender(value.status, value.src, this.editor);
 				}
 				const type = node.attributes(CARD_TYPE_KEY);
 				img.attributes('src', src);
@@ -148,14 +151,20 @@ export default class<T extends ImageOptions = ImageOptions> extends Plugin<T> {
 					img = callback(img, value);
 				}
 				if (type === CardType.BLOCK) {
-					img = this.editor.node.wrap(
+					img = editor.node.wrap(
 						img,
 						$(`<p style="text-align:center;"></p>`),
 					);
 				}
 				node.replaceWith(img);
+				results.push(img);
 			} else node.remove();
 		});
+		return results;
+	};
+
+	destroy() {
+		this.editor.off(PARSE_HTML, this.parseHtml);
 	}
 }
 

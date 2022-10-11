@@ -43,9 +43,10 @@ class RangeColoring implements RangeColoringInterface {
 	}
 
 	destroy() {
-		this.root.children(`.${USER_BACKGROUND_CLASS}`).remove();
-		this.root.children(`.${USER_CURSOR_CLASS}`).remove();
-		this.root.children(`.${USER_MASK_CLASS}`).remove();
+		const body = this.engine.scrollNode ?? this.root;
+		body.find(`.${USER_BACKGROUND_CLASS}`).remove();
+		body.find(`.${USER_CURSOR_CLASS}`).remove();
+		body.find(`.${USER_MASK_CLASS}`).remove();
 	}
 
 	getRectWithRange(node: NodeInterface, range: RangeInterface) {
@@ -104,7 +105,7 @@ class RangeColoring implements RangeColoringInterface {
 		tinyColor.setAlpha(0.3);
 		let targetCanvas: TinyCanvasInterface;
 		const rgb = tinyColor.toRgbString();
-		let child = (this.engine.scrollNode ?? this.root).children(
+		let child = (this.engine.scrollNode ?? this.root).find(
 			`.${USER_BACKGROUND_CLASS}[${DATA_UUID}="${uuid}"]`,
 		);
 		if (child && child.length > 0) {
@@ -129,9 +130,10 @@ class RangeColoring implements RangeColoringInterface {
 			'pointer-events': 'none',
 		});
 		child[0]['__range'] = range.cloneRange();
-		const parentWidth = this.engine.scrollNode
-			? this.engine.scrollNode.width()
-			: this.root.width();
+		const containerElement = this.engine.scrollNode ?? this.root;
+		const parentWidth =
+			containerElement.get<Element>()?.clientWidth ||
+			containerElement.width();
 		const parentHeight = this.root.height();
 		targetCanvas.resize(parentWidth, parentHeight);
 		let cardInfo = card.find(range.commonAncestorNode, true);
@@ -183,10 +185,11 @@ class RangeColoring implements RangeColoringInterface {
 
 	getNodeRect(node: NodeInterface, rect: DOMRect) {
 		//自定义列表项的第一个card跳过
+		const parent = node.parent();
 		if (
 			node.isCard() &&
-			node.parent()?.hasClass('data-list-item') &&
-			node.parent()?.first()?.equal(node) &&
+			parent?.hasClass(this.engine.list.CUSTOMZIE_LI_CLASS) &&
+			parent?.first()?.equal(node) &&
 			node.next()
 		) {
 			node = node.next()!;
@@ -543,23 +546,38 @@ class RangeColoring implements RangeColoringInterface {
 		if (cardInfo && !cardInfo.isCenter(commonAncestorNode)) {
 			cardInfo = undefined;
 		}
-
+		const removeCardMasks: string[] = [];
 		card.each((cardComponent) => {
 			if (cardComponent.isEditable) return;
 			if (!cardInfo || !cardComponent.root.equal(cardInfo.root)) {
 				if (cardComponent.activatedByOther === uuid) {
 					this.setCardActivatedByOther(cardComponent);
 				}
-				this.root
-					.children(`.${USER_MASK_CLASS}[${DATA_UUID}="${uuid}"]`)
-					.remove();
-				Tooltip.hide();
+				removeCardMasks.push(uuid);
 			}
 		});
+		if (removeCardMasks.length > 0) {
+			this.root
+				.get<Element>()
+				?.querySelectorAll(
+					removeCardMasks
+						.map(
+							(uuid) =>
+								`.${USER_MASK_CLASS}[${DATA_UUID}="${uuid}"]`,
+						)
+						.join(','),
+				)
+				?.forEach((child) => {
+					child.parentNode?.removeChild(child);
+					Tooltip.hide();
+				});
+		}
 		if (cardInfo && !cardInfo.isEditable) {
 			const root =
 				this.setCardActivatedByOther(cardInfo, member) || cardInfo.root;
-
+			this.root
+				.find(`.${USER_CURSOR_CLASS}[${DATA_UUID}="${uuid}"]`)
+				.remove();
 			const collab = (cardInfo.constructor as CardEntry).collab;
 			if (collab === undefined || collab === true) {
 				const cursor = this.drawCursor(root, member, showInfo);
@@ -570,6 +588,9 @@ class RangeColoring implements RangeColoringInterface {
 			//可编辑卡片
 			if (cardInfo) {
 				this.drawBackground(range, member);
+				this.root
+					.find(`.${USER_CURSOR_CLASS}[${DATA_UUID}="${uuid}"]`)
+					.remove();
 				return;
 			}
 			card.each((cardComponent) => {
@@ -631,36 +652,41 @@ class RangeColoring implements RangeColoringInterface {
 	}
 
 	updateBackgroundPosition() {
-		this.root.children(`.${USER_BACKGROUND_CLASS}`).each((child) => {
-			const node = $(child);
-			const range = child['__range'];
-			const uuid = node.attributes(DATA_UUID);
-			const color = node.attributes(DATA_COLOR);
-			this.drawBackground(range, {
-				uuid,
-				color,
+		(this.engine.scrollNode?.get<Element>() ?? this.root.get<Element>())
+			?.querySelectorAll(`.${USER_BACKGROUND_CLASS}`)
+			.forEach((child) => {
+				const node = $(child);
+				const range = child['__range'];
+				const uuid = node.attributes(DATA_UUID);
+				const color = node.attributes(DATA_COLOR);
+				this.drawBackground(range, {
+					uuid,
+					color,
+				});
 			});
-		});
 	}
 
 	updateCursorPosition() {
-		this.root.children(`.${USER_CURSOR_CLASS}`).each((child) => {
-			const node = $(child);
-			let target = child['__target'];
-			if (!target) {
-				node.remove();
-				return;
-			}
-			if (!target.name)
-				target = Range.fromPath(this.engine, target, true);
-			if (
-				target.startContainer ||
-				0 !== $(target).closest('body').length
-			) {
-				const rect = this.getCursorRect(target);
-				this.setCursorRect(node, rect);
-			} else node.remove();
-		});
+		this.root
+			.get<Element>()
+			?.querySelectorAll(`.${USER_CURSOR_CLASS}`)
+			.forEach((child) => {
+				const node = $(child);
+				let target = child['__target'];
+				if (!target) {
+					node.remove();
+					return;
+				}
+				if (!target.name)
+					target = Range.fromPath(this.engine, target, true);
+				if (
+					target.startContainer ||
+					0 !== $(target).closest('body').length
+				) {
+					const rect = this.getCursorRect(target);
+					this.setCursorRect(node, rect);
+				} else node.remove();
+			});
 	}
 
 	updateCardPosition() {
@@ -670,17 +696,17 @@ class RangeColoring implements RangeColoringInterface {
 			left: 0,
 			top: 0,
 		};
-		this.root.children(`.${USER_MASK_CLASS}`).each((child) => {
-			const node = $(child);
-			const target = child['__node'];
-			if (0 !== $(target).closest('body').length) {
-				const rect = target.getBoundingClientRect();
-				node.css({
-					left: rect.left - parentRect.left + 'px',
-					top: rect.top - parentRect.top + 'px',
-				});
-			} else node.remove();
-		});
+		this.root
+			.get<Element>()
+			?.querySelectorAll<HTMLElement>(`.${USER_MASK_CLASS}`)
+			.forEach((child) => {
+				const target: Element | undefined = child['__node'];
+				if (target?.isConnected) {
+					const rect = target.getBoundingClientRect();
+					child.style.left = rect.left - parentRect.left + 'px';
+					child.style.top = rect.top - parentRect.top + 'px';
+				} else child.parentNode?.removeChild(child);
+			});
 	}
 
 	updatePosition() {
@@ -691,69 +717,62 @@ class RangeColoring implements RangeColoringInterface {
 
 	updateBackgroundAlpha(range: RangeInterface) {
 		const cursorRect = this.getCursorRect(range);
-		this.root.children(`.${USER_CURSOR_CLASS}`).each((child) => {
-			const node = $(child);
-			const trigger = node.find(`.${USER_CURSOR_TRIGGER_CLASS}`);
-			const left = node.css('left');
-			const top = node.css('top');
-			const bgColor = tinycolor2(node.css('background-color'));
-			if (cursorRect.left === left && cursorRect.top === top) {
-				bgColor.setAlpha(0.3);
-			} else {
-				bgColor.setAlpha(1);
-			}
-			node.css('background-color', bgColor.toRgbString());
-			trigger.css('background-color', bgColor.toRgbString());
-		});
+		this.root
+			.get<Element>()
+			?.querySelectorAll<HTMLElement>(`.${USER_CURSOR_CLASS}`)
+			.forEach((child) => {
+				const trigger = child.querySelector<HTMLElement>(
+					`.${USER_CURSOR_TRIGGER_CLASS}`,
+				);
+				const left = child.style.left;
+				const top = child.style.top;
+				const bgColor = tinycolor2(child.style.backgroundColor);
+				if (cursorRect.left === left && cursorRect.top === top) {
+					bgColor.setAlpha(0.3);
+				} else {
+					bgColor.setAlpha(1);
+				}
+				const bgs = bgColor.toRgbString();
+				child.style.backgroundColor = bgs;
+				if (trigger) trigger.style.backgroundColor = bgs;
+			});
 	}
 
-	render(
-		data: Array<Attribute>,
-		members: Array<Member>,
-		idDraw: boolean,
-		showInfo?: boolean,
-	) {
-		const { engine } = this;
-		const info = {};
-		data.forEach((item) => {
-			const { path, uuid, active } = item;
-			const member = members.find((m) => m.uuid === uuid);
-			if (member && (idDraw || active)) {
-				if (path) {
-					const range = Range.fromPath(engine, path, true);
-					this.drawRange(range, member, showInfo);
-				} else {
-					info[uuid] = true;
-				}
-			}
-		});
-		this.root.children(`[${DATA_UUID}]`).each((child) => {
-			const domChild = $(child);
-			const uuid = domChild.attributes(DATA_UUID);
-			const member = members.find((m) => m.uuid === uuid);
-			if (!member || info[uuid]) {
-				if (domChild.hasClass(USER_MASK_CLASS)) {
-					const target = $(domChild[0]['__node']);
-					const component = engine.card.find(target);
+	render(attribute: Attribute, member: Member, showInfo?: boolean) {
+		const { path, uuid, active } = attribute;
+		if (path) {
+			const range = Range.fromPath(this.engine, path, true);
+			this.drawRange(range, member, active || showInfo);
+		} else {
+			this.remove(uuid);
+		}
+	}
+
+	remove(uuid: string) {
+		(this.engine.scrollNode?.get<Element>() ?? this.root.get<Element>())
+			?.querySelectorAll(`[${DATA_UUID}="${uuid}"]`)
+			.forEach((dataElement) => {
+				if (dataElement.classList.contains(USER_MASK_CLASS)) {
+					const target: Node | undefined = dataElement['__node'];
+					const component = target
+						? this.engine.card.find(target)
+						: null;
 					if (
 						component &&
 						!component.isEditable &&
 						component.activatedByOther === uuid
 					) {
+						// 取消锁定
 						this.setCardActivatedByOther(component);
 					}
 				}
-				domChild.remove();
-			}
-		});
-		engine.card.each((component) => {
-			if (component.isEditable) return;
-			const member = members.find(
-				(m) => m.uuid === component.selectedByOther,
-			);
-			if (!member || info[member.uuid]) {
-				this.setCardSelectedByOther(component);
-			}
+				dataElement.parentNode?.removeChild(dataElement);
+			});
+		this.engine.card.each((component) => {
+			if (component.isEditable || component.selectedByOther !== uuid)
+				return;
+			// 取消锁定
+			this.setCardSelectedByOther(component);
 		});
 	}
 }

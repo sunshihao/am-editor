@@ -10,6 +10,8 @@ export interface FontfamilyOptions extends PluginOptions {
 	hotkey?: { key: string; args: Array<string> };
 	filter?: (fontfamily: string) => string | boolean;
 }
+
+const PASTE_EACH = 'paste:each';
 export default class<
 	T extends FontfamilyOptions = FontfamilyOptions,
 > extends MarkPlugin<T> {
@@ -34,8 +36,9 @@ export default class<
 
 	init() {
 		super.init();
-		if (isEngine(this.editor)) {
-			this.editor.on('paste:each', (node) => this.pasteEach(node));
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.on(PASTE_EACH, this.pasteEach);
 		}
 	}
 
@@ -74,7 +77,7 @@ export default class<
 		return this.options.hotkey || [];
 	}
 
-	pasteEach(node: NodeInterface) {
+	pasteEach = (node: NodeInterface) => {
 		//pt 转为px
 		if (node.name === this.tagName) {
 			const styles = node.css();
@@ -91,6 +94,13 @@ export default class<
 			} else node.css(this.#styleName, '');
 			const nodeApi = this.editor.node;
 			if (!nodeApi.isMark(node)) nodeApi.unwrap(node);
+		}
+	};
+
+	destroy(): void {
+		const editor = this.editor;
+		if (isEngine(editor)) {
+			editor.off(PASTE_EACH, this.pasteEach);
 		}
 	}
 }

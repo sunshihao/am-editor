@@ -100,13 +100,22 @@ class Range implements RangeInterface {
 		const startNode = this.startNode;
 		if (
 			!$(node).isCursor() &&
-			startNode.children().length === 1 &&
+			startNode.get<Node>()?.childNodes.length === 1 &&
 			startNode.first()?.name === 'br'
 		) {
 			startNode.first()?.remove();
 		} else if (startNode.name === 'br') {
 			startNode.remove();
 		}
+		// 防止文本节点被插入到根节点上
+		if (
+			(node.nodeType === Node.TEXT_NODE || node.nodeName === 'BR') &&
+			startNode.isEditable()
+		) {
+			this.shrinkToElementNode().shrinkToTextNode();
+		}
+		if (node instanceof Element || node instanceof DocumentFragment)
+			this.editor.nodeId.generate(node);
 		this.base.insertNode(node);
 	}
 
@@ -126,10 +135,12 @@ class Range implements RangeInterface {
 	}
 	setEndAfter(node: Node | NodeInterface): void {
 		if (isNodeEntry(node)) node = node[0];
+		if (!node.parentNode) return;
 		return this.base.setEndAfter(node);
 	}
 	setEndBefore(node: Node | NodeInterface): void {
 		if (isNodeEntry(node)) node = node[0];
+		if (!node.parentNode) return;
 		return this.base.setEndBefore(node);
 	}
 	setStart(node: Node | NodeInterface, offset: number): void {
@@ -138,10 +149,12 @@ class Range implements RangeInterface {
 	}
 	setStartAfter(node: Node | NodeInterface): void {
 		if (isNodeEntry(node)) node = node[0];
+		if (!node.parentNode) return;
 		return this.base.setStartAfter(node);
 	}
 	setStartBefore(node: Node | NodeInterface): void {
 		if (isNodeEntry(node)) node = node[0];
+		if (!node.parentNode) return;
 		return this.base.setStartBefore(node);
 	}
 
@@ -340,7 +353,7 @@ class Range implements RangeInterface {
 				} else {
 					range.setEndBefore(domNode[0]);
 				}
-			} else if (offset === domNode.children().length) {
+			} else if (offset === domNode.get<Node>()?.childNodes.length) {
 				while (!domNode.next()) {
 					parent = domNode.parent();
 					if (!parent || (!toBlock && nodeApi.isBlock(parent))) {
@@ -509,6 +522,7 @@ class Range implements RangeInterface {
 				ranges.push(docRange);
 			}
 		});
+		if (ranges.length === 0) ranges.push(this);
 		return ranges;
 	};
 
@@ -554,7 +568,10 @@ class Range implements RangeInterface {
 
 	getStartOffsetNode = (): Node => {
 		const { startContainer, startOffset } = this;
-		if (startContainer.nodeType === Node.ELEMENT_NODE) {
+		if (
+			startContainer.nodeType === Node.ELEMENT_NODE ||
+			startContainer.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+		) {
 			return (
 				startContainer.childNodes[startOffset] ||
 				startContainer.childNodes[startOffset - 1] ||
@@ -566,7 +583,10 @@ class Range implements RangeInterface {
 
 	getEndOffsetNode = (): Node => {
 		const { endContainer, endOffset } = this;
-		if (endContainer.nodeType === Node.ELEMENT_NODE) {
+		if (
+			endContainer.nodeType === Node.ELEMENT_NODE ||
+			endContainer.nodeType === Node.DOCUMENT_FRAGMENT_NODE
+		) {
 			return (
 				endContainer.childNodes[endOffset] ||
 				endContainer.childNodes[endOffset - 1] ||
@@ -601,9 +621,12 @@ class Range implements RangeInterface {
 		}
 	};
 
-	scrollIntoViewIfNeeded = (view: NodeInterface) => {
+	scrollIntoViewIfNeeded = (
+		container = this.editor.container,
+		view: NodeInterface,
+	) => {
 		if (this.collapsed) {
-			this.editor.container.scrollIntoView($(this.getEndOffsetNode()));
+			container.scrollIntoView($(this.getEndOffsetNode()));
 		} else {
 			const startNode = this.getStartOffsetNode();
 			const endNode = this.getEndOffsetNode();
@@ -628,47 +651,60 @@ class Range implements RangeInterface {
 	 * @param isLeft
 	 */
 	handleBr = (isLeft?: boolean) => {
-		const block = this.editor.block.closest(this.commonAncestorNode);
+		const editor = this.editor;
+		const { list } = editor;
+		const block = editor.block.closest(this.commonAncestorNode);
 		block.find('br').each((br) => {
 			const domBr = $(br);
+			const prev = domBr.prev();
+			const next = domBr.next();
+			const parent = domBr.parent();
 			if (
-				((!domBr.prev() ||
-					(domBr.parent()?.hasClass('data-list-item') &&
-						domBr.parent()?.first()?.equal(domBr.prev()!))) &&
-					domBr.next() &&
-					domBr.next()!.name !== 'br' &&
-					![CURSOR, ANCHOR, FOCUS].includes(
-						domBr.next()!.attributes(DATA_ELEMENT),
-					)) ||
-				(!domBr.next() && domBr.prev() && domBr.prev()?.name !== 'br')
+				((!prev ||
+					(parent?.hasClass(list.CUSTOMZIE_LI_CLASS) &&
+						parent?.first()?.equal(prev))) &&
+					next &&
+					next.name !== 'br' &&
+					!next.isCursor()) ||
+				(!next && prev && prev.name !== 'br')
 			) {
 				if (
 					isLeft &&
-					domBr.prev() &&
+					prev &&
 					!(
-						domBr.parent()?.hasClass('data-list-item') &&
-						domBr.parent()?.first()?.equal(domBr.prev()!)
+						parent?.hasClass(list.CUSTOMZIE_LI_CLASS) &&
+						parent?.first()?.equal(domBr.prev()!)
 					)
 				)
 					return;
 				domBr.remove();
 			}
 		});
-
+		const first = block.first();
+		const children = block.children();
 		if (
-			!block.first() ||
-			(block.children().length === 1 &&
-				block.hasClass('data-list-item') &&
-				block.first()?.isCard())
+			!first ||
+			(children.length === 1 &&
+				block.hasClass(list.CUSTOMZIE_LI_CLASS) &&
+				first?.isCard())
 		) {
 			block.append($('<br />'));
 			return this;
 		}
 
 		if (
-			block.children().length === 2 &&
-			block.hasClass('data-list-item') &&
-			block.first()?.isCard() &&
+			children.length === 1 &&
+			first.isText() &&
+			first.text().replace(/\r\n|\n|\t|\u200b/g, '').length === 0
+		) {
+			block.html('<br />');
+			return this;
+		}
+
+		if (
+			children.length === 2 &&
+			block.hasClass(list.CUSTOMZIE_LI_CLASS) &&
+			first?.isCard() &&
 			['cursor', 'anchor', 'focus'].includes(
 				block.last()?.attributes(DATA_ELEMENT) || '',
 			)
@@ -865,33 +901,37 @@ Range.fromPath = (
 	const startOffset = startPath.pop();
 	const endOffset = endPath.pop();
 
-	const getNode = (path: Path, context: NodeInterface = editor.container) => {
-		let domNode = context;
+	const getNode = (
+		path: Path,
+		context: Element = editor.container.get<Element>()!,
+	) => {
+		let domNode: Node = context;
 		for (let i = 0; i < path.length; i++) {
 			let p = path[i];
 			if (p < 0) {
 				p = 0;
 			}
 			let needNode = undefined;
-			let domChild = domNode.first();
+			let domChild = domNode.firstChild;
 			let offset = 0;
-			while (domChild && domChild.length > 0) {
+			while (domChild) {
 				if (
-					(!domChild.attributes(DATA_TRANSIENT_ELEMENT) &&
-						domChild.attributes(DATA_ELEMENT) !== UI) ||
+					!(domChild instanceof Element) ||
+					(!domChild.getAttribute(DATA_TRANSIENT_ELEMENT) &&
+						domChild.getAttribute(DATA_ELEMENT) !== UI) ||
 					(includeCardCursor &&
 						['left', 'right'].includes(
-							domChild.attributes(CARD_ELEMENT_KEY),
+							domChild.getAttribute(CARD_ELEMENT_KEY) || '',
 						))
 				) {
-					if (offset === p || !domChild.next()) {
+					if (offset === p || !domChild.nextSibling) {
 						needNode = domChild;
 						break;
 					}
 					offset++;
-					domChild = domChild.next();
+					domChild = domChild.nextSibling;
 				} else {
-					domChild = domChild.next();
+					domChild = domChild.nextSibling;
 				}
 			}
 			if (!needNode) break;
@@ -926,36 +966,31 @@ Range.fromPath = (
 		}
 	};
 	const beginContext = path.start.id
-		? root.find(`[${DATA_ID}="${path.start.id}"]`)
-		: root;
+		? root.get<Element>()?.querySelector(`[${DATA_ID}="${path.start.id}"]`)
+		: root.get<Element>();
 	const startNode = getNode(
-		path.start.bi > -1 && beginContext.length > 0
+		path.start.bi > -1 && beginContext instanceof Element
 			? startPath.slice(path.start.bi)
 			: startPath,
-		beginContext.length > 0 ? beginContext : undefined,
+		beginContext instanceof Element ? beginContext : undefined,
 	);
 	const endContext = path.end.id
-		? root.find(`[${DATA_ID}="${path.end.id}"]`)
+		? root.get<Element>()?.querySelector(`[${DATA_ID}="${path.end.id}"]`)
 		: root;
 	const endNode = getNode(
-		path.end.bi > -1 && endContext.length > 0
+		path.end.bi > -1 && endContext instanceof Element
 			? endPath.slice(path.end.bi)
 			: endPath,
-		endContext.length > 0 ? endContext : undefined,
+		endContext instanceof Element ? endContext : undefined,
 	);
 	const range = Range.create(editor, document);
 	setRange(
 		'setStart',
 		range,
-		startNode.get(),
+		startNode,
 		startOffset === undefined ? 0 : startOffset,
 	);
-	setRange(
-		'setEnd',
-		range,
-		endNode.get(),
-		endOffset === undefined ? 0 : endOffset,
-	);
+	setRange('setEnd', range, endNode, endOffset === undefined ? 0 : endOffset);
 	return range;
 };
 

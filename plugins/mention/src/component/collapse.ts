@@ -6,7 +6,6 @@ import {
 	NodeInterface,
 	UI,
 	Position,
-	Scrollbar,
 	unescape,
 	escape,
 } from '@aomao/engine';
@@ -27,13 +26,12 @@ export interface CollapseComponentInterface {
 }
 
 class CollapseComponent implements CollapseComponentInterface {
-	private engine: EngineInterface;
-	private root?: NodeInterface;
-	private target?: NodeInterface;
-	private otpions: Options;
-	private readonly SCOPE_NAME = 'data-mention-component';
+	protected engine: EngineInterface;
+	protected root?: NodeInterface;
+	protected target?: NodeInterface;
+	protected otpions: Options;
+	protected readonly SCOPE_NAME = 'data-mention-component';
 	#position?: Position;
-	#scrollbar?: Scrollbar;
 
 	renderEmpty: (root: NodeInterface) => string | NodeInterface | void =
 		() => {
@@ -98,14 +96,7 @@ class CollapseComponent implements CollapseComponentInterface {
 			return;
 		}
 		this.select(items.findIndex((n) => n.equal(activeNode!)));
-		let offset = 0;
-		this.root.find('.data-mention-item').each((node) => {
-			if (activeNode?.equal(node)) return false;
-			offset += (node as Element).clientHeight;
-			return;
-		});
-		const rootElement = this.root.get<Element>()!;
-		rootElement.scrollTop = offset - rootElement.clientHeight / 2;
+		activeNode.get<HTMLElement>()?.scrollIntoView({ block: 'nearest' });
 	}
 
 	unbindEvents() {
@@ -128,6 +119,7 @@ class CollapseComponent implements CollapseComponentInterface {
 				return;
 			}
 			event.preventDefault();
+			event.stopImmediatePropagation();
 			const active = this.root?.find('.data-mention-item-active');
 			active?.get<HTMLElement>()?.click();
 		});
@@ -155,13 +147,12 @@ class CollapseComponent implements CollapseComponentInterface {
 			if (onCancel) onCancel();
 		});
 		this.engine.on('keydown:enter', this.handlePreventDefault);
-		if (!this.root || !this.target) return;
+		if (!this.root || !this.target || this.target.length === 0) return;
 		this.#position?.bind(this.root, this.target);
 	}
 
 	remove() {
 		if (!this.root || this.root.length === 0) return;
-		this.#scrollbar?.destroy();
 		this.unbindEvents();
 		this.root.remove();
 		this.root = undefined;
@@ -278,12 +269,8 @@ class CollapseComponent implements CollapseComponentInterface {
 			).then((content: any) => {
 				const body = this.getBody();
 				if (content) body?.empty().append(content);
-				this.#scrollbar?.destroy();
-				if (body)
-					this.#scrollbar = new Scrollbar(body, false, true, false);
 				this.select(0);
 				this.bindEvents();
-				this.#scrollbar?.refresh();
 			});
 			this.renderRootEmpty();
 			return;
@@ -311,9 +298,7 @@ class CollapseComponent implements CollapseComponentInterface {
 			this.select(0);
 		}
 		this.renderRootEmpty();
-		if (body) this.#scrollbar = new Scrollbar(body, false, true, false);
 		this.bindEvents();
-		this.#scrollbar?.refresh();
 	}
 }
 

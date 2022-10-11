@@ -20,7 +20,7 @@
                     {{title}}
                 </div>
                 <div v-if="description" class="toolbar-collapse-item-description">
-                    {{description}}
+                    {{typeof description === 'function' ? description() : description }}
                 </div>
             </div>
         </div>
@@ -42,7 +42,7 @@ export default defineComponent({
         const active = ref(false);
         const handleMouseDown = (event:MouseEvent) => {
             event.preventDefault();
-            if(props.onMouseDown) props.onMouseDown(event)
+            if(props.onMouseDown) props.onMouseDown(event, props.engine)
         }
 
         const handleClick = (event: MouseEvent) => {
@@ -53,7 +53,7 @@ export default defineComponent({
             if (nodeName !== 'INPUT' && nodeName !== 'TEXTAREA')
                 event.preventDefault();
 
-            if (props.onClick && props.onClick(event,props.name) === false) {
+            if (props.onClick && props.onClick(event, props.name, props.engine) === false) {
                 return;
             }
             if (props.autoExecute !== false) {
@@ -67,7 +67,8 @@ export default defineComponent({
                         commandArgs = props.command;
                     }
                 }
-                props.engine?.command.execute(commandName, ...commandArgs);
+				if(props.engine)
+                props.engine.command.execute(commandName, ...commandArgs);
             }
         };
 
@@ -79,7 +80,7 @@ export default defineComponent({
             active.value = false
         }
         return {
-            iconIsHtml:/^<.*>/.test(props.icon?.trim() || ""),
+            iconIsHtml:/^<.*>/.test((props.icon || "").trim()),
             active,
             disabled: props.disabled,
             handleClick,

@@ -40,14 +40,14 @@ class Resizer implements ResizerInterface {
 
 	renderTemplate(imgUrl?: string) {
 		return `
-        <div class="data-resizer">
-            ${imgUrl ? `<img src="${imgUrl}">` : ''}
-            <div class="data-resizer-holder data-resizer-holder-right-top"></div>
-            <div class="data-resizer-holder data-resizer-holder-right-bottom"></div>
-            <div class="data-resizer-holder data-resizer-holder-left-bottom"></div>
-            <div class="data-resizer-holder data-resizer-holder-left-top"></div>
-            <span class="data-resizer-number"></span>
-        </div>`;
+			<span class="data-resizer">
+				${imgUrl ? `<img src="${imgUrl}">` : ''}
+				<span class="data-resizer-holder data-resizer-holder-right-top"></span>
+				<span class="data-resizer-holder data-resizer-holder-right-bottom"></span>
+				<span class="data-resizer-holder data-resizer-holder-left-bottom"></span>
+				<span class="data-resizer-holder data-resizer-holder-left-top"></span>
+				<span class="data-resizer-number"></span>
+			</span>`;
 	}
 
 	onMouseDown(event: MouseEvent | TouchEvent, position: ResizerPosition) {
@@ -175,11 +175,11 @@ class Resizer implements ResizerInterface {
 	}
 
 	on(eventType: string, listener: EventListener) {
-		this.image?.on(eventType, listener);
+		this.root.on(eventType, listener);
 	}
 
 	off(eventType: string, listener: EventListener) {
-		this.image?.off(eventType, listener);
+		this.root.off(eventType, listener);
 	}
 
 	render() {

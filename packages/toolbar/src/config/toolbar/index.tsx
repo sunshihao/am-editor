@@ -1,5 +1,5 @@
 import React from 'react';
-import { CARD_SELECTOR, isEngine, Range } from '@aomao/engine';
+import { isEngine, Range, EngineInterface } from '@aomao/engine';
 import type { EditorInterface } from '@aomao/engine';
 import type {
 	ButtonProps,
@@ -39,13 +39,12 @@ export const getToolbarDefaultConfig = (
 										<g fill="none" fillRule="evenodd">
 											<rect
 												stroke="#E8E8E8"
-												strokeWidth=".667"
 												fill="#FFF"
-												x=".333"
-												y=".333"
-												width="23.333"
-												height="23.333"
-												rx="1.333"
+												x=".5"
+												y=".5"
+												width="23"
+												height="23"
+												rx="2"
 											/>
 											<g fillRule="nonzero">
 												<path
@@ -139,14 +138,13 @@ export const getToolbarDefaultConfig = (
 															props.onClick(
 																event,
 																'table',
+																engine as EngineInterface,
 															);
-														setTimeout(() => {
-															engine.command.execute(
-																'table',
-																rows,
-																cols,
-															);
-														}, 0);
+														engine.command.execute(
+															'table',
+															rows,
+															cols,
+														);
 													}}
 												/>
 											);
@@ -170,17 +168,19 @@ export const getToolbarDefaultConfig = (
 												<g>
 													<g transform="translate(16.000000, 53.000000)">
 														<g transform="translate(0.000000, 40.000000)">
-															<g>
+															<g
+																fill="none"
+																fillRule="evenodd"
+															>
 																<rect
 																	stroke="#E8E8E8"
-																	strokeWidth="0.666666667"
-																	fill="#FFFFFF"
-																	x="0.333333333"
-																	y="0.333333333"
-																	width="23.3333333"
-																	height="23.3333333"
-																	rx="1.33333333"
-																></rect>
+																	fill="#FFF"
+																	x=".5"
+																	y=".5"
+																	width="23"
+																	height="23"
+																	rx="2"
+																/>
 																<g transform="translate(5.250000, 6.750000)">
 																	<path
 																		d="M0.75,0 L3.75,0 L3.75,10.5 L0.75,10.5 C0.335786438,10.5 5.07265313e-17,10.1642136 0,9.75 L0,0.75 C-5.07265313e-17,0.335786438 0.335786438,7.6089797e-17 0.75,0 Z"
@@ -392,6 +392,48 @@ export const getToolbarDefaultConfig = (
 							search: '公式,数学公式,gongshi,formula,math,latex',
 						},
 						{
+							name: 'tag',
+							icon: (
+								<span>
+									<svg
+										width="24"
+										height="24"
+										xmlns="http://www.w3.org/2000/svg"
+									>
+										<g fill="none" fillRule="evenodd">
+											<rect
+												stroke="#E8E8E8"
+												fill="#FFF"
+												x=".5"
+												y=".5"
+												width="23"
+												height="23"
+												rx="2"
+											/>
+											<g transform="scale(0.3, 0.3) translate(16 16)">
+												<path
+													d="M8 44L8 6C8 4.89543 8.89543 4 10 4H38C39.1046 4 40 4.89543 40 6V44L24 35.7273L8 44Z"
+													fill="none"
+													stroke="#595959"
+													strokeWidth="2"
+													strokeLinejoin="round"
+												/>
+												<path
+													d="M16 18H32"
+													stroke="#595959"
+													strokeWidth="2"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+												/>
+											</g>
+										</g>
+									</svg>
+								</span>
+							),
+							title: language['tag']['title'],
+							search: 'tag,label,标签',
+						},
+						{
 							name: 'status',
 							icon: (
 								<span>
@@ -403,13 +445,12 @@ export const getToolbarDefaultConfig = (
 										<g fill="none" fillRule="evenodd">
 											<rect
 												stroke="#E8E8E8"
-												strokeWidth=".667"
 												fill="#FFF"
-												x=".333"
-												y=".333"
-												width="23.333"
-												height="23.333"
-												rx="1.333"
+												x=".5"
+												y=".5"
+												width="23"
+												height="23"
+												rx="2"
 											/>
 											<g transform="translate(6 6)">
 												<path
@@ -440,6 +481,88 @@ export const getToolbarDefaultConfig = (
 							),
 							title: language['status']['title'],
 							search: 'status,label,状态',
+						},
+						{
+							name: 'lightblock',
+							icon: (
+								<span>
+									<svg
+										version="1.1"
+										xmlns="http://www.w3.org/2000/svg"
+										width="24"
+										height="24"
+									>
+										<g>
+											<rect
+												stroke="#E8E8E8"
+												fill="#FFF"
+												x=".5"
+												y=".5"
+												width="23"
+												height="23"
+												rx="2"
+											/>
+											<g transform="scale(0.02, 0.02) translate(90, 66)">
+												<path d="M334.381005 532.396498c-43.065755-49.294608-63.309781-112.604389-57.006228-178.291306 10.574825-110.073758 97.919974-198.776832 207.71744-210.893776 68.155127-7.538682 133.543239 13.271232 184.12721 58.571883 49.904497 44.705089 78.529384 108.733229 78.529384 175.681881 0 58.288428-21.461758 114.226326-60.43532 157.530511-33.148915 36.840996-52.83217 85.053971-56.389176 137.225087H528.321701V438.869569c0-9.007123-7.311508-16.319655-16.323748-16.319655-9.014286 0-16.312492 7.312531-16.312491 16.324771v233.34507H393.113547c-3.619427-51.119159-24.146908-100.241852-58.732542-139.823257z m267.534684 349.898389H422.088404c-15.65553 0-28.397714-12.72888-28.397714-28.38441v-13.222113h236.617596v13.222113c0.001023 15.648367-12.737067 28.384411-28.392597 28.38441z m28.393621-176.619226v40.79095h-236.61862V704.913299l236.61862 0.762362z m0 102.380557h-236.61862v-28.945182h236.617596v28.945182h0.001024z m-269.255882 45.853236c0 33.645217 27.378503 61.036 61.035999 61.035999h179.827286c33.65238 0 61.036-27.390782 61.035999-61.035999V689.406148c0-50.646392 17.267234-97.71736 48.62639-132.56803 44.377631-49.313027 68.815158-113.009617 68.815158-179.372938 0-76.212623-32.576888-149.107695-89.390734-199.987401-57.609977-51.586809-132.021585-75.230251-209.499013-66.725571-125.072327 13.823816-224.583539 114.852588-236.613503 240.230883-7.177455 74.713483 15.876564 146.765352 64.907159 202.899725 33.056817 37.817228 51.255258 85.643394 51.255259 134.65557v165.371068z"></path>
+											</g>
+										</g>
+									</svg>
+								</span>
+							),
+							title: language['lightblock']['title'],
+							search: 'light,lightblock,高亮块',
+							onDisabled: () => {
+								// 有激活卡片 或者没有启用插件
+								return (
+									!!engine.card.active ||
+									!engine.command.queryEnabled('lightblock')
+								);
+							},
+						},
+						{
+							name: 'mulit_codeblock',
+							icon: (
+								<span>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="24"
+										height="24"
+									>
+										<g fill="none" fillRule="evenodd">
+											<rect
+												stroke="#E8E8E8"
+												fill="#FFF"
+												x=".5"
+												y=".5"
+												width="23"
+												height="23"
+												rx="2"
+											/>
+											<g transform="scale(0.02, 0.02) translate(90, 66)">
+												<path
+													d="M168.6 169v686h686.1V169H168.6z m640.1 46v146.7H214.6V215h594.1zM214.6 809V407.7h594.1V809H214.6z"
+													fill="#737373"
+												/>
+												<path
+													d="M255.6 267.2h64v46h-64zM383.6 267.2h64v46h-64zM511.7 267.2h64v46h-64zM417.4 532.9l-53-3.1L292 640.3 365.3 750h55.4l-73.5-109.9zM606.4 532.9l70.1 107.2-72.3 108.2 54.2 1.7 73.3-109.7-72.4-110.5zM445.4 774.9h48.2l83.7-268-47.6-1.8z"
+													fill="#737373"
+												/>
+											</g>
+										</g>
+									</svg>
+								</span>
+							),
+							title: language['mulitCodeblock']['title'],
+							search: '代码块,mulit,codeblock,mulit_codeblock',
+							onDisabled: () => {
+								// 有激活卡片 或者没有启用插件
+								return (
+									!!engine.card.active ||
+									!engine.command.queryEnabled(
+										'mulit_codeblock',
+									)
+								);
+							},
 						},
 						/**{
 							name: 'mind',
