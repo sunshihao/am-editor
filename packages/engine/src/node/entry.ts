@@ -558,9 +558,9 @@ class NodeEntry implements NodeInterface {
 		}
 		const isRemoveStyle = key === 'style' && val === '';
 		this.each((node) => {
-			const element = node as Element;
-			if (isRemoveStyle) element.removeAttribute('style');
-			else element.setAttribute(key, val.toString());
+			if (!(node instanceof Element)) return;
+			if (isRemoveStyle) node.removeAttribute('style');
+			else node.setAttribute(key, val.toString());
 		});
 		return this;
 	}
@@ -572,9 +572,8 @@ class NodeEntry implements NodeInterface {
 	 */
 	removeAttributes(key: string): NodeInterface {
 		this.each((node) => {
-			if (node.nodeType !== Node.ELEMENT_NODE) return;
-			const element = <Element>node;
-			element.removeAttribute(key);
+			if (!(node instanceof Element)) return;
+			node.removeAttribute(key);
 		});
 		return this;
 	}
@@ -605,8 +604,8 @@ class NodeEntry implements NodeInterface {
 	 */
 	addClass(className: string): NodeInterface {
 		this.each((node) => {
-			const element = <Element>node;
-			element.classList.add(className);
+			if (!(node instanceof Element)) return;
+			node.classList.add(className);
 		});
 		return this;
 	}
@@ -618,8 +617,8 @@ class NodeEntry implements NodeInterface {
 	 */
 	removeClass(className: string): NodeEntry {
 		this.each((node) => {
-			const element = <Element>node;
-			element.classList.remove(className);
+			if (!(node instanceof Element)) return;
+			node.classList.remove(className);
 		});
 		return this;
 	}
@@ -718,7 +717,9 @@ class NodeEntry implements NodeInterface {
 			});
 			return this;
 		}
-		return this.length > 0 ? (this[0] as Element).innerHTML : '';
+		return this.length > 0 && this[0] instanceof Element
+			? this[0].innerHTML
+			: '';
 	}
 	/**
 	 * 获取或设置元素节点文本
@@ -854,7 +855,7 @@ class NodeEntry implements NodeInterface {
 			for (let i = 0; i < nodes.length; i++) {
 				const child = isClone ? nodes[i].cloneNode(true) : nodes[i];
 				if (typeof selector === 'string') {
-					(node as Element).append(child);
+					if (node instanceof Element) node.append(child);
 				} else {
 					node.appendChild(child);
 				}

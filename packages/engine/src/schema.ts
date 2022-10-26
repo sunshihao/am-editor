@@ -135,19 +135,19 @@ class Schema implements SchemaInterface {
 	updateTagMap() {
 		this._tagMap.marks = [];
 		this.data.marks.forEach((mark) => {
-			if (!this._tagMap.marks.includes(mark.name)) {
+			if (~~this._tagMap.marks.indexOf(mark.name)) {
 				this._tagMap.marks.push(mark.name);
 			}
 		});
 		this._tagMap.blocks = [];
 		this.data.blocks.forEach((block) => {
-			if (!this._tagMap.blocks.includes(block.name)) {
+			if (~~this._tagMap.blocks.indexOf(block.name)) {
 				this._tagMap.blocks.push(block.name);
 			}
 		});
 		this._tagMap.inlines = [];
 		this.data.inlines.forEach((inline) => {
-			if (!this._tagMap.inlines.includes(inline.name)) {
+			if (~~this._tagMap.inlines.indexOf(inline.name)) {
 				this._tagMap.inlines.push(inline.name);
 			}
 		});
@@ -208,9 +208,10 @@ class Schema implements SchemaInterface {
 		let id = element.getAttribute(DATA_ID);
 		if (!id) id = getHashId(element, false);
 		else id = id.split('-')[0];
-		if (this._invalidKeys.includes(id)) return undefined;
-		if (!!this._typeMap[id] && (!filter || filter(this._typeMap[id]!)))
-			return this._typeMap[id].type;
+		if (element.nodeName !== 'CARD' && ~this._invalidKeys.indexOf(id))
+			return undefined;
+		const map = this._typeMap[id];
+		if (!!map && (!filter || filter(map))) return map.type;
 		const reuslt = this.getRule(element, filter);
 		if (reuslt) this._typeMap[id] = reuslt;
 		else this._invalidKeys.push(id);
@@ -340,8 +341,7 @@ class Schema implements SchemaInterface {
 					.every((value) =>
 						value.trim() === ''
 							? true
-							: (rule as Array<string>).indexOf(value.trim()) >
-							  -1,
+							: ~(rule as Array<string>).indexOf(value.trim()),
 					);
 			}
 			return rule.indexOf(attributesValue) > -1;
@@ -505,7 +505,7 @@ class Schema implements SchemaInterface {
 		if (!rule.allowIn) {
 			rule.allowIn = [];
 		}
-		if (!rule.allowIn.includes(parent)) {
+		if (~~rule.allowIn.indexOf(parent)) {
 			rule.allowIn.push(parent);
 		}
 	}

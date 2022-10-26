@@ -1,42 +1,12 @@
-import md5 from 'blueimp-md5';
 import { NodeInterface } from '../types';
 import { DATA_ID } from '../constants';
 
-const _counters: { [key: string]: number } = {};
+let _counters = 0;
 
-export const uuid = (len: number, radix: number = 16): string => {
-	const chars =
-		'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split(
-			'',
-		);
-	let uuid = [],
-		i;
-	radix = radix || chars.length;
-	if (radix > chars.length) {
-		radix = chars.length;
-	}
-	if (len) {
-		// Compact form
-		for (i = 0; i < len; i++) uuid[i] = chars[0 | (Math.random() * radix)];
-	} else {
-		// rfc4122, version 4 form
-		let r;
-
-		// rfc4122 requires these characters
-		uuid[8] = uuid[13] = uuid[18] = uuid[23] = '-';
-		uuid[14] = '4';
-
-		// Fill in random data.  At i==19 set the high bits of clock sequence as
-		// per rfc4122, sec. 4.1.5
-		for (i = 0; i < 36; i++) {
-			if (!uuid[i]) {
-				r = 0 | (Math.random() * 16);
-				uuid[i] = chars[i == 19 ? (r & 0x3) | 0x8 : r];
-			}
-		}
-	}
-
-	return uuid.join('');
+export const uuid = (n = 0): string => {
+	return Number(
+		Math.random().toString().substring(2, 7) + n + Date.now(),
+	).toString(36);
 };
 
 const valueCaches = new Map<string, string>();
@@ -56,7 +26,7 @@ export default (
 			const attributes = element.attributes;
 			for (let i = attributes.length; i--; ) {
 				const item = attributes[i];
-				if (![DATA_ID, 'id'].includes(item.name))
+				if (~~[DATA_ID, 'id'].indexOf(item.name))
 					value += `${item.name}="${item.value}"`;
 			}
 		} else {
@@ -65,20 +35,50 @@ export default (
 	}
 	const cachePerfix = valueCaches.get(value);
 	if (!cachePerfix) {
-		const md5Value = md5(value);
-		prefix =
-			prefix +
-			md5Value.substr(0, 4) +
-			md5Value.substr(md5Value.length - 3);
+		const base64 = window.btoa(encodeURIComponent(value)).replace(/=/g, '');
+		const indexs: number[] = [];
+		[
+			'a',
+			'b',
+			'c',
+			'd',
+			'e',
+			'f',
+			'g',
+			'h',
+			'i',
+			'j',
+			'k',
+			'l',
+			'm',
+			'n',
+			'o',
+			'p',
+			'q',
+			'r',
+			's',
+			't',
+			'u',
+			'v',
+			'w',
+			'x',
+			'y',
+			'z',
+		].forEach((char, i) => {
+			const index = base64.indexOf(char);
+			indexs.push(~index ? index : base64.length % i ? 0 : 1);
+		});
+		const str = Number(indexs.join('')).toString(36).replace(/0/g, '');
+		prefix = prefix + str.substr(0, 4) + str.substr(-4);
 		valueCaches.set(value, prefix);
 	} else {
 		prefix = cachePerfix;
 	}
 	const hash = prefix;
 	if (unique) {
-		const counter = _counters[hash] || 0;
-		_counters[hash] = counter + 1;
-		return `${hash}-${uuid(8, 48 + _counters[hash])}`;
+		const key = `${hash}-${uuid(_counters)}`;
+		_counters++;
+		return key;
 	}
 
 	return hash;

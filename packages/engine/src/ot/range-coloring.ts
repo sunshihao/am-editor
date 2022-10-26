@@ -108,15 +108,19 @@ class RangeColoring implements RangeColoringInterface {
 		let child = (this.engine.scrollNode ?? this.root).find(
 			`.${USER_BACKGROUND_CLASS}[${DATA_UUID}="${uuid}"]`,
 		);
+		const containerElement = this.engine.scrollNode ?? this.root;
 		if (child && child.length > 0) {
 			child.attributes(DATA_COLOR, color.toString());
 			targetCanvas = child[0]['__canvas'];
-			targetCanvas.clear();
+			if (!child[0]['__clear']) {
+				targetCanvas.clear();
+				child[0]['__clear'] = true;
+			}
 		} else {
 			child = $(
 				`<div class="${USER_BACKGROUND_CLASS}" ${DATA_UUID}="${uuid}" ${DATA_COLOR}="${color}" />`,
 			);
-			(this.engine.scrollNode ?? this.root).append(child);
+			containerElement.append(child);
 			targetCanvas = new TinyCanvas({
 				container: child.get<HTMLElement>()!,
 			});
@@ -127,15 +131,19 @@ class RangeColoring implements RangeColoringInterface {
 			position: 'absolute',
 			top: 0,
 			left: 0,
+			transform: 'translateX(0) translateY(0)',
+			'will-change': 'transform',
 			'pointer-events': 'none',
 		});
 		child[0]['__range'] = range.cloneRange();
-		const containerElement = this.engine.scrollNode ?? this.root;
+
 		const parentWidth =
 			containerElement.get<Element>()?.clientWidth ||
 			containerElement.width();
 		const parentHeight = this.root.height();
 		targetCanvas.resize(parentWidth, parentHeight);
+		if (range.collapsed) return [range];
+		child[0]['__clear'] = false;
 		let cardInfo = card.find(range.commonAncestorNode, true);
 		//如果是卡片，并且选区不在内容模块中，而是在卡片两侧的光标位置处，就不算作卡片
 		if (cardInfo && !cardInfo.isCenter(range.commonAncestorNode)) {
@@ -159,7 +167,10 @@ class RangeColoring implements RangeColoringInterface {
 							parentWidth - result.x,
 							parentHeight,
 						);
-						child.css('left', `${result.x}px`);
+						child.css(
+							'transform',
+							`translateX(${result.x}px) translateY(0)`,
+						);
 						result.x = 0;
 					}
 					targetCanvas.clearRect(result);
@@ -177,7 +188,7 @@ class RangeColoring implements RangeColoringInterface {
 			} else {
 				const rect = this.getRectWithRange(child, subRange);
 				targetCanvas.clearRect(rect);
-				targetCanvas.drawRect({ ...rect.toJSON(), ...fill });
+				targetCanvas.drawRect(Object.assign({}, rect.toJSON(), fill));
 			}
 		});
 		return subRanges;
@@ -272,11 +283,23 @@ class RangeColoring implements RangeColoringInterface {
 	setCursorRect(node: NodeInterface, rect: CursorRect) {
 		if (-1 !== rect.height) {
 			if (0 === rect.height) {
-				node.css(rect);
+				node.css({
+					top: 0,
+					left: 0,
+					height: rect.height,
+					transform: `translateX(${rect.left}) translateY(${rect.top})`,
+					'will-change': 'transform, height',
+				});
 				node.addClass(USER_CURSOR_CARD_CLASS);
 				return;
 			}
-			node.css(rect);
+			node.css({
+				top: 0,
+				left: 0,
+				height: rect.height,
+				transform: `translateX(${rect.left}) translateY(${rect.top})`,
+				'will-change': 'transform, height',
+			});
 			node.removeClass(USER_CURSOR_CARD_CLASS);
 		} else node.remove();
 	}
@@ -417,8 +440,12 @@ class RangeColoring implements RangeColoringInterface {
 		if (mask && mask.length > 0) {
 			mask[0]['__node'] = node[0];
 			mask.css({
-				left: nodeRect.left - parentRect.left + 'px',
-				top: nodeRect.top - parentRect.top + 'px',
+				left: 0,
+				top: 0,
+				transform: `translateX(${
+					nodeRect.left - parentRect.left
+				}) translateY(${nodeRect.top - parentRect.top}px)`,
+				'will-change': 'transform',
 			});
 			return;
 		}
@@ -443,20 +470,28 @@ class RangeColoring implements RangeColoringInterface {
 					}, 20);
 				} else {
 					mask.css({
-						left: nodeRect.left - parentRect.left + 'px',
-						top: nodeRect.top - parentRect.top + 'px',
+						transform: `translateX(${
+							nodeRect.left - parentRect.left
+						}px) translateY(${nodeRect.top - parentRect.top}px)`,
+						left: 0,
+						top: 0,
 						width: nodeRect.width + 'px',
 						height: nodeRect.height + 'px',
+						'will-change': 'transform, width, height',
 					});
 				}
 			};
 			getRect();
 		} else {
 			mask.css({
-				left: nodeRect.left - parentRect.left + 'px',
-				top: nodeRect.top - parentRect.top + 'px',
+				transform: `translateX(${
+					nodeRect.left - parentRect.left
+				}px) translateY(${nodeRect.top - parentRect.top}px)`,
+				left: 0,
+				top: 0,
 				width: nodeRect.width + 'px',
 				height: nodeRect.height + 'px',
+				'will-change': 'transform, width, height',
 			});
 		}
 
@@ -470,8 +505,12 @@ class RangeColoring implements RangeColoringInterface {
 		mask.on('mousemove', (event: MouseEvent) => {
 			const tooltipElement = $(`div[${DATA_ELEMENT}=tooltip]`);
 			tooltipElement.css({
-				left: event.pageX - 16 + 'px',
-				top: event.pageY + 32 + 'px',
+				left: 0,
+				top: 0,
+				transform: `translateX(${event.pageX - 16}px) translateY(${
+					event.pageY + 32
+				}px)`,
+				'will-change': 'transform',
 			});
 		});
 

@@ -107,11 +107,17 @@ class CardModel implements CardModelInterface {
 			this.classes[card.cardName] = card;
 		});
 		if (!this.lazyRender) return;
-		window.addEventListener('resize', this.renderAsyncComponents);
+		window.addEventListener('resize', this.renderAsyncComponents, {
+			passive: true,
+		});
 		editor.scrollNode
 			?.get<HTMLElement>()
-			?.addEventListener('scroll', this.renderAsyncComponents);
-		window.addEventListener('scroll', this.renderAsyncComponents);
+			?.addEventListener('scroll', this.renderAsyncComponents, {
+				passive: true,
+			});
+		window.addEventListener('scroll', this.renderAsyncComponents, {
+			passive: true,
+		});
 		editor.on('card:async-render', this.renderAsyncComponents);
 	}
 
@@ -815,14 +821,17 @@ class CardModel implements CardModelInterface {
 			center.append(typeof result === 'string' ? $(result) : result);
 		}
 		if (card.contenteditable.length > 0) {
+			const contenteditable =
+				!isEngine(editor) || editor.readonly ? 'false' : 'true';
 			center.find(card.contenteditable.join(',')).each((node) => {
 				const child = $(node);
-				if (child.attributes(DATA_CONTENTEDITABLE_KEY) !== undefined)
-					child.attributes(
-						DATA_CONTENTEDITABLE_KEY,
-						!isEngine(editor) || editor.readonly ? 'false' : 'true',
-					);
-				child.attributes(DATA_ELEMENT, EDITABLE);
+				if (
+					child.attributes(DATA_CONTENTEDITABLE_KEY) !==
+					contenteditable
+				)
+					child.attributes(DATA_CONTENTEDITABLE_KEY, contenteditable);
+				if (child.attributes(DATA_ELEMENT) !== EDITABLE)
+					child.attributes(DATA_ELEMENT, EDITABLE);
 				if (isEngine(editor)) {
 					editor.normalize(child);
 				}
