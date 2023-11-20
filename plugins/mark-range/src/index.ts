@@ -20,8 +20,9 @@ import {
 	View,
 	EditorInterface,
 	CardInterface,
+	Path,
+	Node as ModelNode,
 } from '@aomao/engine';
-import { Path } from 'sharedb';
 
 export interface MarkRangeOptions extends PluginOptions {
 	keys: Array<string>;
@@ -71,13 +72,31 @@ export default class<
 		const globals: Array<SchemaGlobal> = [];
 		const optionKeys = this.options?.keys || [];
 		optionKeys.forEach((key) => {
-			globals.push({
-				type: 'mark',
-				attributes: {
-					[this.getIdName(key)]: '*',
-					[this.MARK_KEY]: key,
+			const attributes = {
+				[this.getIdName(key)]: '*',
+				[this.MARK_KEY]: key,
+				[this.MARK_UUID]: '*',
+			};
+			globals.push(
+				{
+					type: 'mark',
+					attributes: {
+						...attributes,
+					},
 				},
-			});
+				{
+					type: 'inline',
+					attributes: {
+						...attributes,
+					},
+				},
+				{
+					type: 'block',
+					attributes: {
+						...attributes,
+					},
+				},
+			);
 		});
 		const editor = this.editor;
 		editor.schema.add(globals);
@@ -88,12 +107,13 @@ export default class<
 			editor.on('change', this.onChange);
 			editor.on('select', this.onSelectionChange);
 			editor.on('parse:value', this.parseValue);
+			editor.on('parse:node', this.parseNode);
 			editor.on('afterSetValue', this.onAfterSetValue);
 			const keys = optionKeys.map((key) => this.getPreviewName(key));
 			editor.history.onFilter((op) => {
 				if (
-					('od' in op || 'oi' in op) &&
-					keys.includes(op.p[op.p.length - 1].toString())
+					op.type === 'set_node' &&
+					keys.some((key) => !!op.newProperties[key])
 				) {
 					return true;
 				}
@@ -113,12 +133,17 @@ export default class<
 				return;
 			});
 		} else if (isView(editor)) {
+			editor.on(`${PLUGIN_NAME}:set-range`, this.onSelectionChange);
 			editor.container.document?.addEventListener(
 				'selectionchange',
-				this.onSelectionChange,
+				this.handelSelectionChange,
 			);
 		}
 	}
+
+	handelSelectionChange = () => {
+		this.onSelectionChange();
+	};
 
 	onBeforeCommandExecute = (name: string) => {
 		this.executeBySelf = name === PLUGIN_NAME;
@@ -136,6 +161,13 @@ export default class<
 		const key = node.attributes(this.MARK_KEY);
 		if (!!key) {
 			atts[DATA_TRANSIENT_ATTRIBUTES] = this.getPreviewName(key);
+		}
+	};
+
+	parseNode = (node: ModelNode) => {
+		const key = node[this.MARK_KEY];
+		if (!!key) {
+			node[DATA_TRANSIENT_ATTRIBUTES] = this.getPreviewName(key);
 		}
 	};
 
@@ -543,16 +575,20 @@ export default class<
 
 	startMutation() {
 		const editor = this.editor;
-		if (isEngine(editor) && editor.ot.isStopped()) {
-			editor.ot.startMutation();
+		if (isEngine(editor) && editor.model.mutation.isStopped) {
+			editor.model.mutation.start();
 		}
 	}
 
 	stopMutation() {
 		const editor = this.editor;
 		setTimeout(() => {
-			if (isEngine(editor) && editor.readonly && !editor.ot.isStopped()) {
-				editor.ot.stopMutation();
+			if (
+				isEngine(editor) &&
+				editor.readonly &&
+				!editor.model.mutation.isStopped
+			) {
+				editor.model.mutation.stop();
 			}
 		}, 10);
 	}
@@ -608,15 +644,23 @@ export default class<
 	 * 光标选择改变触发
 	 * @returns
 	 */
-	onSelectionChange = () => {
+	onSelectionChange = (range?: RangeInterface | null) => {
 		if (this.executeBySelf) return;
 		const editor = this.editor;
-		const { window } = editor.container;
-		const selection = window?.getSelection();
+		if (!range) {
+			const { window } = editor.container;
+			const selection = window?.getSelection();
 
-		if (!selection) return;
-		const range = Range.from(editor, selection);
+			if (!selection) return;
+			range = Range.from(editor, selection);
+		}
 		if (!range) return;
+		if (
+			isView(editor) &&
+			!range.commonAncestorNode.inEditor(editor.container) &&
+			!range.commonAncestorNode.isRoot()
+		)
+			return;
 
 		//不在编辑器内
 		if (
@@ -735,9 +779,11 @@ export default class<
 		const parser = new Parser(container, editor, undefined, false);
 		const { schema, conversion } = editor;
 		if (!range) {
+			const newValue = value ?? parser.toValue(schema, conversion);
+			editor.destroy();
 			container.remove();
 			return {
-				value: value ? value : parser.toValue(schema, conversion),
+				value: newValue,
 				paths: [],
 			};
 		}
@@ -794,7 +840,7 @@ export default class<
 				}
 			}
 		});
-		value = parser.toValue(schema, conversion);
+		value = value ?? parser.toValue(schema, conversion);
 		editor.destroy();
 		container.remove();
 		return {
@@ -837,8 +883,10 @@ export default class<
 		const parser = new Parser(container, editor, undefined, false);
 		const { schema, conversion } = editor;
 		if (!range) {
+			const newValue = value ? value : parser.toValue(schema, conversion);
+			editor.destroy();
 			container.remove();
-			return value ? value : parser.toValue(schema, conversion);
+			return newValue;
 		}
 
 		range.select(container, true).collapse(true);
@@ -907,11 +955,13 @@ export default class<
 			editor.off('change', this.onChange);
 			editor.off('select', this.onSelectionChange);
 			editor.off('parse:value', this.parseValue);
+			editor.off('parse:node', this.parseNode);
 			editor.off('afterSetValue', this.onAfterSetValue);
 		} else if (isView(editor)) {
+			editor.off(`${PLUGIN_NAME}:set-range`, this.onSelectionChange);
 			editor.container.document?.removeEventListener(
 				'selectionchange',
-				this.onSelectionChange,
+				this.handelSelectionChange,
 			);
 		}
 	}

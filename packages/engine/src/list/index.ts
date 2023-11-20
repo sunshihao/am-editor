@@ -62,13 +62,19 @@ class List implements ListModelInterface {
 		const children = node
 			.children()
 			.toArray()
-			.filter((child) => !child.isCursor());
+			.filter((child) => {
+				if (child.isText()) {
+					return child.text().replace(/[\n\t]/g, '') !== '';
+				}
+				return !child.isCursor();
+			});
 		const nodeApi = this.editor.node;
 		return (
 			//节点名称必须为li
 			'li' === node.name &&
 			//空节点
 			(nodeApi.isEmpty(node) ||
+				children.length === 0 ||
 				//子节点只有一个，如果是自定义列表并且第一个是卡片 或者第一个节点是 br标签，就是空节点
 				(1 === children.length
 					? (nodeApi.isCustomize(node) && children[0].isCard()) ||
@@ -457,16 +463,19 @@ class List implements ListModelInterface {
 	merge(blocks?: Array<NodeInterface>, range?: RangeInterface) {
 		const editor = this.editor;
 		if (!isEngine(editor)) return;
-		const { change, block, node } = editor;
+		const { change, block, node, schema } = editor;
+		const tags = schema.getCanMergeTags();
+		if (tags.length === 0) return;
 		const safeRange = range || change.range.toTrusty();
 		const cloneRange = safeRange.cloneRange();
 		const selection = blocks
 			? undefined
 			: cloneRange.shrinkToElementNode().createSelection();
 		blocks = blocks || block.getBlocks(safeRange);
+		let hasMerged = false;
 		blocks.forEach((block) => {
 			block = block.closest('ul,ol');
-			if (!node.isList(block)) {
+			if (!node.isList(block) || tags.indexOf(block.name) === -1) {
 				return;
 			}
 			const prevBlock = block.prev();
@@ -476,16 +485,20 @@ class List implements ListModelInterface {
 				node.merge(prevBlock, block);
 				// 原来 block 已经被移除，重新指向
 				block = prevBlock;
+				hasMerged = true;
 			}
 
 			if (nextBlock && this.isSame(nextBlock, block)) {
 				node.merge(block, nextBlock);
+				hasMerged = true;
 			}
 		});
-		blocks = block.getBlocks(safeRange);
-		if (blocks.length > 0) {
-			const block = blocks[0].closest('ul,ol');
-			this.addStart(block);
+		if (hasMerged) {
+			blocks = block.getBlocks(safeRange);
+			if (blocks.length > 0) {
+				const block = blocks[0].closest('ul,ol');
+				this.addStart(block);
+			}
 		}
 		selection?.move();
 		if (!range && selection !== undefined) change.apply(cloneRange);

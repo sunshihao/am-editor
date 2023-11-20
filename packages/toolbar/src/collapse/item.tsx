@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import classnames from 'classnames-es-ts';
 import { EngineInterface, Placement } from '@aomao/engine';
 import Popover from 'antd/es/popover';
-import 'antd/es/popover/style';
+import 'antd/es/popover/style/css';
 
 export type CollapseItemProps = {
 	name: string;
@@ -105,7 +105,9 @@ const CollapseItem: React.FC<CollapseItemProps> = (props) => {
 			</div>
 		);
 	};
-	return prompt ? (
+	// prompt 应该是功能展示所有应该和disabled绑定
+	// 如果需要diabled状态展示一些提示文案 应该把title改成支持 Tooltip 的组件
+	return prompt && !disabled ? (
 		<Popover
 			placement={placement || 'right'}
 			content={

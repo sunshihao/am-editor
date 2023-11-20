@@ -1,4 +1,3 @@
-import tinycolor2 from 'tinycolor2';
 import { ANCHOR, CURSOR, FOCUS } from '../constants/selection';
 import {
 	CARD_EDITABLE_KEY,
@@ -41,18 +40,20 @@ export const toCamelCase = (
 	value: string,
 	type: CamelCaseType = CamelCaseType.LOWER,
 ): string => {
-	return value
-		.split('-')
-		.map((str, index) => {
-			if (type === 'upper' || index > 0) {
-				return str.charAt(0).toUpperCase() + str.substr(1);
-			}
-			if (type === 'lower' && index === 0) {
-				return str.charAt(0).toLowerCase() + str.substr(1);
-			}
-			return str;
-		})
-		.join('');
+	return ~value.indexOf('-')
+		? value
+				.split('-')
+				.map((str, index) => {
+					if (type === 'upper' || index > 0) {
+						return str.charAt(0).toUpperCase() + str.substr(1);
+					}
+					if (type === 'lower' && index === 0) {
+						return str.charAt(0).toLowerCase() + str.substr(1);
+					}
+					return str;
+				})
+				.join('')
+		: value;
 };
 
 /**

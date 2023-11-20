@@ -48,14 +48,19 @@ class Schema implements SchemaInterface {
 	 * 增加规则
 	 * 只有 type 和 attributes 时，将作为此类型全局属性，与其它所有同类型标签属性将合并
 	 * @param rules 规则
+	 * @param merge 是否合并到已有规则下
 	 */
-	add(rules: SchemaRule | SchemaGlobal | Array<SchemaRule | SchemaGlobal>) {
+	add(
+		rules: SchemaRule | SchemaGlobal | Array<SchemaRule | SchemaGlobal>,
+		isMerge = false,
+	) {
 		rules = cloneDeep(rules);
 		if (!Array.isArray(rules)) {
 			rules = [rules];
 		}
 
 		rules.forEach((rule) => {
+			const rules = this.data[`${rule.type}s`];
 			if (isSchemaRule(rule)) {
 				//删除全局属性已有的规则
 				if (rule.attributes) {
@@ -84,14 +89,22 @@ class Schema implements SchemaInterface {
 						}
 					});
 				}
-				if (rule.type === 'block') {
-					this.data.blocks.push(rule);
-				} else if (rule.type === 'inline') {
-					this.data.inlines.push(rule);
-				} else if (rule.type === 'mark') {
-					this.data.marks.push(rule);
+				if (rules) {
+					if (isMerge) {
+						this.data[`${rule.type}s`] = rules.map((item) => {
+							if (item.name === rule.name) {
+								item.attributes = merge(
+									Object.assign({}, item.attributes),
+									rule.attributes,
+								);
+							}
+							return item;
+						});
+					} else {
+						rules.push(rule);
+					}
 				}
-			} else if (!!this.data[`${rule.type}s`]) {
+			} else if (!!rules) {
 				this.data.globals[rule.type] = merge(
 					Object.assign({}, this.data.globals[rule.type]),
 					rule.attributes,
@@ -304,7 +317,7 @@ class Schema implements SchemaInterface {
 					break;
 
 				case '@color':
-					rule = /^(rgb(.+?)|#\w{3,6}|\w+)$/i;
+					rule = /^(rgb(.+?)|#\w{3,8}|\w+)$/i;
 					break;
 
 				case '@url':

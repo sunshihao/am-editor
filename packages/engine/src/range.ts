@@ -7,7 +7,6 @@ import {
 	CARD_LEFT_SELECTOR,
 	CARD_RIGHT_SELECTOR,
 } from './constants/card';
-import { ANCHOR, CURSOR, FOCUS } from './constants/selection';
 import {
 	DATA_ELEMENT,
 	DATA_ID,
@@ -17,10 +16,10 @@ import {
 import Selection from './selection';
 import { SelectionInterface } from './types/selection';
 import { EditorInterface } from './types/editor';
-import { Path } from 'sharedb';
+import { Path } from './model';
 import { $ } from './node';
 import { CardEntry } from './types/card';
-import { isTransientElement } from './ot/utils';
+import { isTransientElementCache } from './model/utils';
 import { isNodeEntry } from './node/utils';
 
 class Range implements RangeInterface {
@@ -488,7 +487,8 @@ class Range implements RangeInterface {
 				)
 					return;
 				const center = cardComponent.getCenter();
-				const body = center.get()?.parentNode;
+				const centerEl = center.get();
+				const body = centerEl?.parentElement ?? centerEl?.parentNode;
 				if (!body || !center.inEditor()) return;
 				const offset = center.index();
 				const childNode = child.get()!;
@@ -609,7 +609,10 @@ class Range implements RangeInterface {
 
 	scrollRangeIntoView = () => {
 		const node = this.getEndOffsetNode();
-		const root = node.nodeType === Node.TEXT_NODE ? node.parentNode : node;
+		const root =
+			node.nodeType === Node.TEXT_NODE
+				? node.parentElement ?? node.parentNode
+				: node;
 		const rect = this.collapsed
 			? (root as Element).getBoundingClientRect()
 			: this.getClientRect();
@@ -801,12 +804,13 @@ class Range implements RangeInterface {
 			const element = $(node);
 			if (
 				includeCardCursor &&
-				['left', 'right', 'center', 'body'].includes(
-					element.attributes(CARD_ELEMENT_KEY),
+				node instanceof HTMLElement &&
+				~['left', 'right', 'center', 'body'].indexOf(
+					node.getAttribute(CARD_ELEMENT_KEY) || '',
 				)
 			) {
 				const cardElement = this.editor.card.closest(element);
-				if (cardElement && cardElement?.length > 0)
+				if (cardElement && cardElement.length > 0)
 					cardCaches.push(cardElement);
 				return true;
 			}
@@ -816,7 +820,7 @@ class Range implements RangeInterface {
 				cardCaches.includes(element)
 			)
 				return true;
-			return !isTransientElement(element);
+			return !isTransientElementCache(element);
 		};
 	}
 
@@ -901,10 +905,7 @@ Range.fromPath = (
 	const startOffset = startPath.pop();
 	const endOffset = endPath.pop();
 
-	const getNode = (
-		path: Path,
-		context: Element = editor.container.get<Element>()!,
-	) => {
+	const getNode = (path: Path, context: Element = root.get<Element>()!) => {
 		let domNode: Node = context;
 		for (let i = 0; i < path.length; i++) {
 			let p = path[i];

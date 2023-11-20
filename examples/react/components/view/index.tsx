@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState, useContext } from 'react';
 import Message from 'antd/es/message';
-import { $, View, ViewInterface } from '@aomao/engine';
+import { $, View, ViewInterface, isMobile } from '@aomao/engine';
 import { plugins, cards } from '../editor/config';
 import Loading from '../loading';
 import Context from '../../context';
-import 'antd/es/message/style';
+import 'antd/es/message/style/css';
 import './index.less';
 
 export type ViewProps = {
@@ -37,6 +37,7 @@ const ViewRender: React.FC<ViewProps> = ({ content, html }) => {
 								return 0;
 							},
 							maxRightWidth: () => {
+								if (isMobile) return 0;
 								// 编辑区域位置
 								const wrapper = $('.editor-wrapper-view');
 								const view = $('.am-engine-view');

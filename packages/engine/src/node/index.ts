@@ -177,7 +177,7 @@ class NodeModel implements NodeModelInterface {
 
 		let value = node.isText() ? node[0].nodeValue || '' : node.text();
 		value = value?.replace(/\u200B/g, '');
-		value = value?.replace(/\r\n|\n/, '');
+		value = value?.replace(/\r\n|\n|\t/, '');
 
 		if (value && withTrim) {
 			value = value.trim();
@@ -576,10 +576,11 @@ class NodeModel implements NodeModelInterface {
 				((prev && !this.isInline(prev)) ||
 					(!prev && parent && !this.isInline(parent)))
 			) {
-				startNode
-					.get<Text>()!
-					.splitText(text.length - 1)
-					.remove();
+				const textNode = startNode.get<Text>()!;
+				const splitNode = textNode.splitText(startOffset - 1);
+				const splitText = splitNode.textContent;
+				if (splitText && splitText.length > 0) splitNode.splitText(1);
+				splitNode.remove();
 			}
 		}
 		// 是否在卡片上，卡片还没有渲染
@@ -645,6 +646,7 @@ class NodeModel implements NodeModelInterface {
 					parentBlock &&
 					this.isBlock(parentBlock) &&
 					!blockNode.isEditable() &&
+					(!parentBlock.isEditable() || parentBlock.isCard()) &&
 					!schema.isAllowIn(
 						parentBlock.name,
 						node.nodeName.toLowerCase(),
@@ -991,7 +993,7 @@ class NodeModel implements NodeModelInterface {
 					}
 					if (childNode.length > 0) cloneNode.append(childNode);
 					//判断下一个节点的开头是换行符，有换行符就跳出
-					if (nextNode?.isText()) {
+					if (nextNode) {
 						const text = nextNode.text();
 						let match = /^(\n|\r)+/.exec(text);
 						if (match) {
@@ -1147,7 +1149,9 @@ class NodeModel implements NodeModelInterface {
 			if (text.charCodeAt(0) === 0x200b) {
 				const newNode = (<Text>node).splitText(1);
 				if (newNode.previousSibling)
-					newNode.parentNode?.removeChild(newNode.previousSibling);
+					(newNode.parentElement ?? newNode.parentNode)?.removeChild(
+						newNode.previousSibling,
+					);
 			}
 		});
 	}

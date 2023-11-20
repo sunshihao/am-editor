@@ -80,11 +80,12 @@ import type { MentionOptions } from '@aomao/plugin-mention';
 import Embed, { EmbedComponent } from '@aomao/plugin-embed';
 // import type { EmbedOptions } from '@aomao/plugin-embed'
 import Test, { TestComponent } from './plugins/test';
+import TestEditable, { TestEditableComponent } from './plugins/test-editable';
 import Lightblock, { LightblockComponent } from '@aomao/plugin-lightblock';
 import MulitCodeblock, {
 	MulitCodeblockComponent,
 } from '../../../../plugins/mulit-codeblock/src';
-
+import EditablePlugin from './plugins/editable';
 import Tag, { TagComponent } from '../../../../plugins/tag/src';
 
 import {
@@ -96,9 +97,10 @@ import type { ToolbarOptions } from '@aomao/toolbar';
 
 import ReactDOM from 'react-dom';
 import Empty from 'antd/es/empty';
-import 'antd/es/empty/style';
-import { ImageUploaderOptions } from 'plugins/image/dist/uploader';
+import 'antd/es/empty/style/css';
+import { ImageUploaderOptions } from '@aomao/plugin-image';
 import Mermaid, { MermaidComponent } from '@aomao/plugin-mermaid';
+import React from 'react';
 
 export const plugins: Array<PluginEntry> = [
 	Redo,
@@ -147,6 +149,8 @@ export const plugins: Array<PluginEntry> = [
 	MulitCodeblock,
 	Tag,
 	Mermaid,
+	EditablePlugin,
+	TestEditable,
 ];
 
 export const cards: CardEntry[] = [
@@ -162,6 +166,7 @@ export const cards: CardEntry[] = [
 	StatusComponent,
 	MentionComponent,
 	TestComponent,
+	TestEditableComponent,
 	EmbedComponent,
 	LightblockComponent,
 	MulitCodeblockComponent,
@@ -172,6 +177,7 @@ export const cards: CardEntry[] = [
 export const tableOptions: TableOptions = {
 	overflow: {
 		maxLeftWidth: () => {
+			if (isMobile) return 0;
 			// 编辑区域位置
 			const rect = $('.am-engine')
 				.get<HTMLElement>()
@@ -183,6 +189,7 @@ export const tableOptions: TableOptions = {
 			return width <= 0 ? 0 : width - 16;
 		},
 		maxRightWidth: () => {
+			if (isMobile) return 0;
 			// 编辑区域位置
 			const rect = $('.am-engine')
 				.get<HTMLElement>()
@@ -194,7 +201,8 @@ export const tableOptions: TableOptions = {
 			return width <= 0 ? 0 : width - 16;
 		},
 	},
-	maxInsertNum: 50,
+	maxInsertNum: 20,
+	enableScroll: false,
 };
 
 export const markRangeOptions: MarkRangeOptions = {
@@ -333,7 +341,7 @@ export const lineHeightOptions: LineHeightOptions = {
 	},
 };
 
-export const toolbarOptions: ToolbarOptions = (lang: string) => ({
+export const toolbarOptions = (lang: string): ToolbarOptions => ({
 	// 快捷键mod+/弹出菜单配置  默认使用系统配置
 	// config: [
 	// 	{
